@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: compute-hub-business
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/compute_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USER:compute}
+    password: ${DB_PASSWORD:compute123}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    time-zone: UTC
+  threads:
+    virtual:
+      enabled: true
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+server:
+  port: 8080
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+compute-hub:
+  jwt-secret: ${JWT_SECRET:compute-hub-demo-jwt-secret-at-least-32-bytes}
+  callback-secret: ${CALLBACK_SECRET:compute-hub-engine-callback-secret}
+  callback-url: ${CALLBACK_URL:http://business-server:8080/api/v1/internal/engine/events}
+  engine-host: ${ENGINE_HOST:localhost}
+  engine-port: ${ENGINE_PORT:9090}

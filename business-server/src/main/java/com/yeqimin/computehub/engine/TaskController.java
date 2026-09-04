@@ -1,0 +1,17 @@
+package com.yeqimin.computehub.engine;
+
+import com.yeqimin.computehub.common.*;
+import com.yeqimin.computehub.persistence.*;
+import com.yeqimin.computehub.security.*;
+import java.util.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
+
+@RestController @RequestMapping("/api/v1/tasks")
+public class TaskController {
+  private final InstanceMapper instances;private final TaskMapper tasks;private final EngineClient engine;private final SettlementService settlement;
+  public TaskController(InstanceMapper instances,TaskMapper tasks,EngineClient engine,SettlementService settlement){this.instances=instances;this.tasks=tasks;this.engine=engine;this.settlement=settlement;}
+  @PostMapping("/{id}/retry") @PreAuthorize("hasAuthority('instance:retry')") @Transactional public ApiResponse<?> retry(@PathVariable long id){Map<String,Object> task=instances.task(id);if(task==null)throw BusinessException.notFound("任务不存在");UserPrincipal u=CurrentUser.get();if(!u.platformAdmin()&&num(task,"tenantId")!=u.tenantId())throw BusinessException.notFound("任务不存在");var state=engine.status(String.valueOf(task.get("commandId")));if(Set.of("RUNNING","FAILED").contains(state.getStatus()))return ApiResponse.ok(settlement.settle("RECON-"+UUID.randomUUID(),state.getCommandId(),state.getStatus(),state.getEngineInstanceId(),"人工对账",UUID.randomUUID().toString().replace("-","")));if(!"UNKNOWN".equals(task.get("taskState")))throw BusinessException.conflict("任务当前无需人工重试");tasks.manualRetry(id);tasks.manualOutbox(num(task,"instanceId"));tasks.dispatching(num(task,"instanceId"));return ApiResponse.ok(Map.of("status","RETRYING"));}
+  private static long num(Map<String,Object>m,String k){return((Number)m.get(k)).longValue();}
+}

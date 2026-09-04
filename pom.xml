@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.5.16</version>
+    <relativePath/>
+  </parent>
+  <groupId>com.yeqimin</groupId>
+  <artifactId>compute-hub-demo</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>ComputeHub Demo</name>
+  <description>Interview-ready compute scheduling platform demo</description>
+  <url>https://github.com/yeqimin/compute-hub-demo</url>
+  <developers><developer><name>yeqimin</name></developer></developers>
+  <modules>
+    <module>proto</module>
+    <module>business-server</module>
+    <module>mock-engine</module>
+  </modules>
+  <properties>
+    <java.version>21</java.version>
+    <grpc.version>1.84.0</grpc.version>
+    <protobuf.version>4.33.5</protobuf.version>
+  </properties>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.grpc</groupId><artifactId>grpc-bom</artifactId><version>${grpc.version}</version><type>pom</type><scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId><artifactId>testcontainers-bom</artifactId><version>1.21.3</version><type>pom</type><scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>

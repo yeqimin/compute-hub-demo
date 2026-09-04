@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package computehub.engine.v1;
+option java_multiple_files = true;
+option java_package = "com.yeqimin.computehub.proto";
+option java_outer_classname = "ComputeEngineProto";
+
+service ComputeEngine {
+  rpc CreateInstance(CreateInstanceCommand) returns (CommandAccepted);
+  rpc GetCommandStatus(CommandStatusRequest) returns (CommandStatusReply);
+  rpc GetClusterMetrics(MetricsRequest) returns (ClusterMetricsReply);
+}
+
+message CreateInstanceCommand {
+  string command_id = 1;
+  string instance_no = 2;
+  int64 tenant_id = 3;
+  int64 product_id = 4;
+  string cluster_code = 5;
+  string scenario = 6;
+  string callback_url = 7;
+}
+
+message CommandAccepted { bool accepted = 1; string message = 2; }
+message CommandStatusRequest { string command_id = 1; }
+message CommandStatusReply { string command_id = 1; string status = 2; string engine_instance_id = 3; }
+message MetricsRequest { string cluster_code = 1; }
+message ClusterMetric { string cluster_code = 1; double gpu_utilization = 2; double cpu_utilization = 3; double memory_utilization = 4; int64 timestamp = 5; }
+message ClusterMetricsReply { repeated ClusterMetric metrics = 1; }

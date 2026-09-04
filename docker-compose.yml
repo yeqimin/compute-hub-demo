@@ -1,0 +1,66 @@
+name: compute-hub-demo
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: compute_hub
+      MYSQL_USER: compute
+      MYSQL_PASSWORD: compute123
+      MYSQL_ROOT_PASSWORD: root123
+      TZ: Asia/Shanghai
+    ports: ["3307:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot123 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    ports: ["6380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  business-server:
+    build:
+      context: .
+      dockerfile: docker/business.Dockerfile
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/compute_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+      DB_USER: compute
+      DB_PASSWORD: compute123
+      REDIS_HOST: redis
+      ENGINE_HOST: mock-engine
+      CALLBACK_URL: http://business-server:8080/api/v1/internal/engine/events
+      JWT_SECRET: compute-hub-demo-jwt-secret-at-least-32-bytes
+      CALLBACK_SECRET: compute-hub-engine-callback-secret
+    ports: ["8080:8080"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  mock-engine:
+    build:
+      context: .
+      dockerfile: docker/engine.Dockerfile
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/compute_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+      DB_USER: compute
+      DB_PASSWORD: compute123
+      CALLBACK_SECRET: compute-hub-engine-callback-secret
+    ports: ["9090:9090"]
+    depends_on:
+      business-server: { condition: service_healthy }
+  frontend:
+    build: ./frontend
+    ports: ["8088:80"]
+    depends_on:
+      business-server: { condition: service_healthy }
+volumes:
+  mysql-data:

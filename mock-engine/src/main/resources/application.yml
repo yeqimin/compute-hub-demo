@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: compute-hub-mock-engine
+  main:
+    web-application-type: none
+    keep-alive: true
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/compute_hub?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USER:compute}
+    password: ${DB_PASSWORD:compute123}
+engine:
+  grpc-port: ${GRPC_PORT:9090}
+  callback-secret: ${CALLBACK_SECRET:compute-hub-engine-callback-secret}
