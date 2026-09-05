@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import{ref,onMounted}from'vue';import{api}from'../api';import{useAuthStore}from'../stores/auth';const auth=useAuthStore(),tenants=ref<any[]>([]),users=ref<any[]>([]),roles=ref<any[]>([]);onMounted(async()=>{roles.value=await api.get('/roles');if(auth.isAdmin)[tenants.value,users.value]=await Promise.all([api.get('/tenants'),api.get('/users')]);else users.value=await api.get('/users')})
+import{ref,onMounted}from'vue';import{api}from'../api';import{useAuthStore}from'../stores/auth';const auth=useAuthStore(),tenants=ref<any[]>([]),users=ref<any[]>([]),roles=ref<any[]>([]);onMounted(async()=>{roles.value=await api.get<any[]>('/roles');if(auth.isAdmin)[tenants.value,users.value]=await Promise.all([api.get<any[]>('/tenants'),api.get<any[]>('/users')]);else users.value=await api.get<any[]>('/users')})
 </script>
 <template>
   <el-tabs type="border-card" class="panel" style="padding: 0">
