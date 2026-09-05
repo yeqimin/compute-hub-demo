@@ -93,6 +93,7 @@ SET t.operation_type = 'CREATE',
 
 UPDATE outbox_event o
 JOIN async_task t ON t.instance_id = o.aggregate_id
+  AND JSON_UNQUOTE(JSON_EXTRACT(o.payload, '$.commandId')) = t.command_id
 SET o.task_id = t.id, o.command_id = t.command_id,
     o.message_id = o.event_id, t.message_id = o.event_id,
     o.state = CASE o.state WHEN 'WAITING_CALLBACK' THEN 'SENT' ELSE o.state END;
