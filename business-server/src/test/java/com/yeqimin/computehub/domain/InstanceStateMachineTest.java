@@ -17,6 +17,8 @@ class InstanceStateMachineTest {
       "STOPPED,START,STARTING,RUNNING",
       "RUNNING,RESTART,RESTARTING,RUNNING",
       "RUNNING,DELETE,DELETING,DELETED",
+      "STOPPED,DELETE,DELETING,DELETED",
+      "FAILED,DELETE,DELETING,DELETED",
       "DELETE_FAILED,DELETE,DELETING,DELETED"
   })
   void lifecycleTransitions(String current, String operation, String executing, String target) {
@@ -36,6 +38,8 @@ class InstanceStateMachineTest {
       "STOPPED,START,STOPPED",
       "RUNNING,RESTART,RUNNING",
       "RUNNING,DELETE,DELETE_FAILED",
+      "STOPPED,DELETE,DELETE_FAILED",
+      "FAILED,DELETE,DELETE_FAILED",
       "DELETE_FAILED,DELETE,DELETE_FAILED"
   })
   void lifecycleFailuresRestoreTheOperationSpecificStableState(
