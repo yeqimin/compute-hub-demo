@@ -26,6 +26,8 @@ class LifecycleSchemaMigrationTest {
     assertThat(columnExists("compute_instance", "active_task_id")).isTrue();
     assertThat(columnExists("async_task", "operation_type")).isTrue();
     assertThat(columnExists("outbox_event", "task_id")).isTrue();
+    assertThat(columnExists("idempotency_record", "processing_token")).isTrue();
+    assertThat(columnExists("idempotency_record", "locked_at")).isTrue();
     assertThat(tableExists("operation_audit_log")).isTrue();
     assertThat(tableExists("realtime_event")).isTrue();
     assertThat(tableExists("dead_letter_record")).isTrue();
@@ -38,6 +40,8 @@ class LifecycleSchemaMigrationTest {
     assertThat(columnIsNotNull("outbox_event", "task_id")).isTrue();
     assertThat(columnIsNotNull("outbox_event", "command_id")).isTrue();
     assertThat(columnIsNotNull("outbox_event", "message_id")).isTrue();
+    assertThat(columnIsNullable("idempotency_record", "processing_token")).isTrue();
+    assertThat(columnIsNullable("idempotency_record", "locked_at")).isTrue();
 
     assertThat(value("SELECT state FROM async_task WHERE id = 101")).isEqualTo("PENDING");
     assertThat(value("SELECT state FROM async_task WHERE id = 102")).isEqualTo("SUCCEEDED");
@@ -51,6 +55,10 @@ class LifecycleSchemaMigrationTest {
         .isEqualTo("SENT");
     assertThat(value("SELECT status FROM compute_instance WHERE id = 100")).isEqualTo("CREATING");
     assertThat(value("SELECT active_task_id FROM compute_instance WHERE id = 100")).isEqualTo("101");
+    assertThat(value("SELECT processing_token FROM idempotency_record WHERE actor_id = 2"))
+        .isNull();
+    assertThat(value("SELECT locked_at FROM idempotency_record WHERE actor_id = 2"))
+        .isNull();
   }
 
   private void migrateThroughV2() {
@@ -86,6 +94,8 @@ class LifecycleSchemaMigrationTest {
           + "VALUES ('event-pending', 'INSTANCE', 100, 'COMMAND', '{\"commandId\":\"command-pending\"}', 'WAITING_CALLBACK', CURRENT_TIMESTAMP(3))");
       statement.executeUpdate("INSERT INTO outbox_event(event_id, aggregate_type, aggregate_id, event_type, payload, state, next_retry_at) "
           + "VALUES ('event-succeeded', 'INSTANCE', 100, 'COMMAND', '{\"commandId\":\"command-succeeded\"}', 'WAITING_CALLBACK', CURRENT_TIMESTAMP(3))");
+      statement.executeUpdate("INSERT INTO idempotency_record(actor_id, idempotency_key, request_hash, resource_type, status) "
+          + "VALUES (2, 'legacy-idempotency', REPEAT('a', 64), 'INSTANCE_BATCH', 'PROCESSING')");
     }
   }
 
@@ -110,6 +120,14 @@ class LifecycleSchemaMigrationTest {
         MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
         ResultSet columns = connection.getMetaData().getColumns(connection.getCatalog(), null, table, column)) {
       return columns.next() && columns.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNoNulls;
+    }
+  }
+
+  private boolean columnIsNullable(String table, String column) throws Exception {
+    try (Connection connection = DriverManager.getConnection(
+        MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+        ResultSet columns = connection.getMetaData().getColumns(connection.getCatalog(), null, table, column)) {
+      return columns.next() && columns.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNullable;
     }
   }
 

@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class LifecycleCommandService {
+  private static final int BATCH_LEASE_SECONDS = 30;
+  private static final long BATCH_POLL_MILLIS = 50;
   private static final Set<InstanceOperation> USER_OPERATIONS = Set.of(
       InstanceOperation.START,
       InstanceOperation.STOP,
@@ -72,33 +74,64 @@ public class LifecycleCommandService {
     String lock = lockKey(user.id(), key);
     boolean acquired = acquire(lock, token);
     try {
-      if (!acquired) {
-        BatchInstanceActionResponse replay = awaitReplay(
-            user.id(), key, hash, BatchInstanceActionResponse.class);
-        if (replay != null) return replay;
+      while (true) {
+        BatchClaim claim = claimBatch(user.id(), key, hash, token);
+        if (claim.replay() != null) return claim.replay();
+        try {
+          BatchInstanceActionResponse response = submitBatchItems(user, key, request, token);
+          if (idempotency.completeBatch(user.id(), key, token, 0, write(response)) == 1) {
+            return response;
+          }
+        } catch (BatchLeaseLostException ignored) {
+          // The current MySQL owner will complete, or this request may take over once it is stale.
+        }
       }
-      if (idempotency.tryStart(user.id(), key, hash, "INSTANCE_BATCH") == 0) {
-        BatchInstanceActionResponse replay = completedReplay(
-            user.id(), key, hash, BatchInstanceActionResponse.class);
-        if (replay != null) return replay;
-      }
-      BatchInstanceActionResponse response = submitBatchItems(user, key, request);
-      idempotency.complete(user.id(), key, 0, write(response));
-      return response;
     } finally {
       release(lock, token, acquired);
+    }
+  }
+
+  private BatchClaim claimBatch(long actorId, String key, String hash, String token) {
+    if (idempotency.tryStartBatch(actorId, key, hash, token) == 1) {
+      return BatchClaim.owner();
+    }
+    while (true) {
+      Map<String, Object> current = idempotency.find(actorId, key);
+      if (current == null) {
+        if (idempotency.tryStartBatch(actorId, key, hash, token) == 1) {
+          return BatchClaim.owner();
+        }
+        pauseForBatchOwner();
+        continue;
+      }
+      if (!hash.equals(current.get("requestHash"))) {
+        throw BusinessException.conflict("Idempotency-Key 已用于不同请求");
+      }
+      if ("COMPLETED".equals(current.get("status"))) {
+        return BatchClaim.replay(readReplay(current, BatchInstanceActionResponse.class));
+      }
+      if (!"PROCESSING".equals(current.get("status"))) {
+        throw new IllegalStateException("unsupported idempotency status: " + current.get("status"));
+      }
+      if (idempotency.tryTakeoverBatch(
+          actorId, key, hash, token, BATCH_LEASE_SECONDS) == 1) {
+        return BatchClaim.owner();
+      }
+      pauseForBatchOwner();
     }
   }
 
   private BatchInstanceActionResponse submitBatchItems(
       UserPrincipal user,
       String batchKey,
-      BatchInstanceActionRequest request) {
+      BatchInstanceActionRequest request,
+      String token) {
     List<BatchInstanceActionResponse.Item> items = new ArrayList<>();
     int success = 0;
     int skipped = 0;
     int failed = 0;
     for (long instanceId : request.instanceIds()) {
+      requireBatchLease(user.id(), batchKey, token);
       String childHash = fingerprint(Map.of(
           "kind", "INSTANCE_BATCH_ITEM",
           "batchKey", batchKey,
@@ -127,8 +160,24 @@ public class LifecycleCommandService {
             instanceId, "INTERNAL_ERROR", shortMessage(e), null));
         failed++;
       }
+      requireBatchLease(user.id(), batchKey, token);
     }
     return new BatchInstanceActionResponse(success, skipped, failed, items);
+  }
+
+  private void requireBatchLease(long actorId, String key, String token) {
+    if (idempotency.renewBatchLease(actorId, key, token) != 1) {
+      throw new BatchLeaseLostException();
+    }
+  }
+
+  private static void pauseForBatchOwner() {
+    try {
+      Thread.sleep(BATCH_POLL_MILLIS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("interrupted while waiting for batch owner", e);
+    }
   }
 
   private LifecycleSubmission submitGuarded(
@@ -180,6 +229,10 @@ public class LifecycleCommandService {
       throw BusinessException.conflict("Idempotency-Key 已用于不同请求");
     }
     if (!"COMPLETED".equals(old.get("status"))) return null;
+    return readReplay(old, type);
+  }
+
+  private <T> T readReplay(Map<String, Object> old, Class<T> type) {
     try {
       return json.readValue(String.valueOf(old.get("responseBody")), type);
     } catch (Exception e) {
@@ -240,4 +293,16 @@ public class LifecycleCommandService {
     String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     return message.substring(0, Math.min(500, message.length()));
   }
+
+  private record BatchClaim(BatchInstanceActionResponse replay) {
+    private static BatchClaim owner() {
+      return new BatchClaim(null);
+    }
+
+    private static BatchClaim replay(BatchInstanceActionResponse response) {
+      return new BatchClaim(response);
+    }
+  }
+
+  private static final class BatchLeaseLostException extends RuntimeException {}
 }

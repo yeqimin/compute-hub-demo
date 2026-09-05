@@ -4,7 +4,7 @@ import java.util.*;
 import org.apache.ibatis.annotations.*;
 
 public interface TaskMapper {
-  @Select("SELECT o.id,o.event_id eventId,o.aggregate_id instanceId,o.payload,o.retry_count retryCount,t.id taskId,t.command_id commandId,t.tenant_id tenantId,t.retry_count taskRetryCount,i.instance_no instanceNo,i.product_id productId,i.scenario,c.code clusterCode FROM outbox_event o JOIN async_task t ON t.instance_id=o.aggregate_id JOIN compute_instance i ON i.id=o.aggregate_id JOIN compute_cluster c ON c.id=i.cluster_id WHERE o.event_type='CREATE_INSTANCE' AND o.state='READY' AND o.next_retry_at<=NOW(3) ORDER BY o.id LIMIT 1 FOR UPDATE SKIP LOCKED") Map<String,Object> nextOutbox();
+  @Select("SELECT o.id,o.event_id eventId,o.aggregate_id instanceId,o.payload,o.retry_count retryCount,t.id taskId,t.command_id commandId,t.tenant_id tenantId,t.retry_count taskRetryCount,i.instance_no instanceNo,i.product_id productId,i.scenario,c.code clusterCode FROM outbox_event o JOIN async_task t ON t.id=o.task_id JOIN compute_instance i ON i.id=o.aggregate_id JOIN compute_cluster c ON c.id=i.cluster_id WHERE o.event_type='CREATE_INSTANCE' AND o.state='READY' AND o.next_retry_at<=NOW(3) ORDER BY o.id LIMIT 1 FOR UPDATE SKIP LOCKED") Map<String,Object> nextOutbox();
   @Update("UPDATE outbox_event SET state='WAITING_CALLBACK',last_error=NULL WHERE id=#{id}") int outboxWaiting(long id);
   @Update("UPDATE async_task SET state='WAITING_CALLBACK',deadline_at=DATE_ADD(NOW(3),INTERVAL 3 SECOND),last_error=NULL,version=version+1 WHERE id=#{id}") int taskWaiting(long id);
   @Update("UPDATE compute_instance SET status='DISPATCHING' WHERE id=#{id} AND status IN ('REQUESTED','UNKNOWN','DISPATCHING')") int dispatching(long id);

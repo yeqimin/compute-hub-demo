@@ -3,15 +3,22 @@ package com.yeqimin.computehub.common;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.*;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
   @ExceptionHandler(BusinessException.class)
   ResponseEntity<ApiResponse<Void>> business(BusinessException e) { return ResponseEntity.status(e.status()).body(ApiResponse.error(e.code(), e.getMessage())); }
 
-  @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class})
+  @ExceptionHandler({
+      MethodArgumentNotValidException.class,
+      ConstraintViolationException.class,
+      HttpMessageNotReadableException.class,
+      MethodArgumentTypeMismatchException.class
+  })
   ResponseEntity<ApiResponse<Void>> validation(Exception e) { return ResponseEntity.badRequest().body(ApiResponse.error("VALIDATION_ERROR", "请求参数不合法")); }
 
   @ExceptionHandler(AccessDeniedException.class)
