@@ -22,5 +22,5 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: 'jsdom' },
+  test: { environment: 'jsdom', server: { deps: { inline: ['element-plus'] } } },
 })
