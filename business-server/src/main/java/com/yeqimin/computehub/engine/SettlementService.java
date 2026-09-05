@@ -84,6 +84,8 @@ public class SettlementService {
     }
 
     boolean succeeded = "SUCCEEDED".equals(result);
+    String engineId = validatedEngineInstanceId(
+        task.operation(), succeeded, instance.get("engineInstanceId"), event.engineInstanceId());
     InstanceStatus next = succeeded
         ? InstanceStateMachine.success(task.transitionPlan())
         : InstanceStateMachine.failure(task.transitionPlan());
@@ -99,7 +101,7 @@ public class SettlementService {
       }
     }
     if (tasks.finishCallbackInstance(
-        task.instanceId(), task.id(), next.name(), emptyToNull(event.engineInstanceId())) != 1) {
+        task.instanceId(), task.id(), next.name(), engineId) != 1) {
       throw BusinessException.conflict("实例活动任务已变更");
     }
     TaskState finalTaskState = succeeded ? TaskState.SUCCEEDED : TaskState.FAILED;
@@ -199,6 +201,25 @@ public class SettlementService {
   private static boolean callbackStateMatches(
       InstanceStatus callback, InstanceStatus expected, boolean succeeded) {
     return callback == expected || (!succeeded && callback == InstanceStatus.FAILED);
+  }
+
+  private static String validatedEngineInstanceId(
+      InstanceOperation operation,
+      boolean succeeded,
+      Object storedValue,
+      String callbackValue) {
+    String stored = storedValue == null ? null : emptyToNull(String.valueOf(storedValue));
+    String callback = emptyToNull(callbackValue);
+    if (operation == InstanceOperation.CREATE && succeeded && callback == null) {
+      throw BusinessException.conflict("CREATE 成功回调缺少 engine_instance_id");
+    }
+    if (callback != null && stored != null && !stored.equals(callback)) {
+      throw BusinessException.conflict("engine_instance_id 与已有实例不一致");
+    }
+    if (operation != InstanceOperation.CREATE && callback != null && stored == null) {
+      throw BusinessException.conflict("engine_instance_id 与已有实例不一致");
+    }
+    return operation == InstanceOperation.CREATE && succeeded ? callback : null;
   }
 
   private static void validate(EngineEventRequest event, String payloadHash) {

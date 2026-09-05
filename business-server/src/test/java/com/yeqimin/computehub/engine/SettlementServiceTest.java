@@ -6,8 +6,12 @@ import com.yeqimin.computehub.domain.InstanceStatus;
 import com.yeqimin.computehub.domain.TaskState;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -211,6 +215,84 @@ class SettlementServiceTest {
         fixture.taskId())).isEqualTo(1);
   }
 
+  @Test
+  void createSuccessRequiresANonBlankEngineInstanceId() {
+    jdbc.update("UPDATE tenant_wallet SET available_cent=987200, frozen_cent=12800 WHERE tenant_id=2");
+    Fixture fixture = fixture(InstanceOperation.CREATE, InstanceStatus.REQUESTED,
+        InstanceStatus.CREATING, InstanceStatus.RUNNING, TaskState.WAITING_CALLBACK);
+    EngineEventRequest event = new EngineEventRequest(
+        "event-create-without-engine-id", fixture.commandId(), InstanceOperation.CREATE,
+        "SUCCEEDED", InstanceStatus.RUNNING, "", "engine result");
+
+    assertThatThrownBy(() -> settlement.settle(event, hash('4')))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("engine_instance_id");
+    assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
+        .isEqualTo("WAITING_CALLBACK");
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("CREATING");
+    assertThat(count("SELECT COUNT(*) FROM inbox_event WHERE engine_event_id=?",
+        event.eventId())).isZero();
+  }
+
+  @Test
+  void nonCreateCallbackCannotReplaceTheExistingEngineInstanceId() {
+    Fixture fixture = fixture(InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.STOPPING, InstanceStatus.STOPPED, TaskState.WAITING_CALLBACK);
+    jdbc.update("UPDATE compute_instance SET engine_instance_id='eng-original' WHERE id=?",
+        fixture.instanceId());
+    EngineEventRequest event = new EngineEventRequest(
+        "event-engine-id-conflict", fixture.commandId(), InstanceOperation.STOP,
+        "SUCCEEDED", InstanceStatus.STOPPED, "eng-other", "engine result");
+
+    assertThatThrownBy(() -> settlement.settle(event, hash('5')))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("engine_instance_id");
+    assertThat(value("SELECT engine_instance_id FROM compute_instance WHERE id=?",
+        fixture.instanceId())).isEqualTo("eng-original");
+    assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
+        .isEqualTo("WAITING_CALLBACK");
+    assertThat(count("SELECT COUNT(*) FROM inbox_event WHERE engine_event_id=?",
+        event.eventId())).isZero();
+  }
+
+  @Test
+  void nonCreateFailureMayOmitEngineInstanceIdWithoutClearingIt() {
+    Fixture fixture = fixture(InstanceOperation.DELETE, InstanceStatus.RUNNING,
+        InstanceStatus.DELETING, InstanceStatus.DELETED, TaskState.WAITING_CALLBACK);
+    jdbc.update("UPDATE compute_instance SET engine_instance_id='eng-original' WHERE id=?",
+        fixture.instanceId());
+    EngineEventRequest event = new EngineEventRequest(
+        "event-delete-failure-no-engine-id", fixture.commandId(), InstanceOperation.DELETE,
+        "FAILED", InstanceStatus.DELETE_FAILED, "", "engine result");
+
+    SettlementResult result = settlement.settle(event, hash('6'));
+
+    assertThat(result.instanceStatus()).isEqualTo(InstanceStatus.DELETE_FAILED);
+    assertThat(value("SELECT engine_instance_id FROM compute_instance WHERE id=?",
+        fixture.instanceId())).isEqualTo("eng-original");
+  }
+
+  @ParameterizedTest
+  @MethodSource("lifecycleFailures")
+  void failedLifecycleCallbackUsesTheOperationSpecificFallback(
+      InstanceOperation operation,
+      InstanceStatus previous,
+      InstanceStatus executing,
+      InstanceStatus target,
+      InstanceStatus fallback) {
+    Fixture fixture = fixture(operation, previous, executing, target, TaskState.WAITING_CALLBACK);
+
+    SettlementResult result = settlement.settle(event(
+        fixture, "event-failure-" + operation, operation, "FAILED", InstanceStatus.FAILED),
+        hash((char) ('g' + operation.ordinal())));
+
+    assertThat(result.instanceStatus()).isEqualTo(fallback);
+    assertThat(result.taskState()).isEqualTo(TaskState.FAILED);
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo(fallback.name());
+  }
+
   private Fixture fixture(
       InstanceOperation operation,
       InstanceStatus previous,
@@ -233,10 +315,11 @@ class SettlementServiceTest {
     jdbc.update("""
         INSERT INTO compute_instance(
           id, instance_no, order_id, tenant_id, product_id, cluster_id,
-          name, scenario, status, active_task_id)
-        VALUES(?, ?, ?, 2, 1, 1, ?, 'SUCCESS', ?, ?)
+          name, scenario, status, active_task_id, engine_instance_id)
+        VALUES(?, ?, ?, 2, 1, 1, ?, 'SUCCESS', ?, ?, ?)
         """, instanceId, "INS-SETTLE-" + base, orderId, "settlement-" + base,
-        current.name(), taskId);
+        current.name(), taskId,
+        operation == InstanceOperation.CREATE ? null : "eng-" + instanceId);
     jdbc.update("""
         INSERT INTO async_task(
           id, task_no, command_id, tenant_id, instance_id, state,
@@ -280,6 +363,18 @@ class SettlementServiceTest {
 
   private static String hash(char value) {
     return String.valueOf(value).repeat(64);
+  }
+
+  private static Stream<Arguments> lifecycleFailures() {
+    return Stream.of(
+        Arguments.of(InstanceOperation.START, InstanceStatus.STOPPED,
+            InstanceStatus.STARTING, InstanceStatus.RUNNING, InstanceStatus.STOPPED),
+        Arguments.of(InstanceOperation.STOP, InstanceStatus.RUNNING,
+            InstanceStatus.STOPPING, InstanceStatus.STOPPED, InstanceStatus.RUNNING),
+        Arguments.of(InstanceOperation.RESTART, InstanceStatus.RUNNING,
+            InstanceStatus.RESTARTING, InstanceStatus.RUNNING, InstanceStatus.RUNNING),
+        Arguments.of(InstanceOperation.DELETE, InstanceStatus.RUNNING,
+            InstanceStatus.DELETING, InstanceStatus.DELETED, InstanceStatus.DELETE_FAILED));
   }
 
   private record Fixture(
