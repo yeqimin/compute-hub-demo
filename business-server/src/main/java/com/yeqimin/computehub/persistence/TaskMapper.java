@@ -153,7 +153,7 @@ public interface TaskMapper {
       @Param("endedAt")LocalDateTime endedAt,
       @Param("sort")String sort,
       @Param("sortOrder")String sortOrder,
-      @Param("offset")int offset,
+      @Param("offset")long offset,
       @Param("size")int size);
 
   @Select("""

@@ -47,9 +47,10 @@ public class TaskRecoveryService {
     String state = query.state() == null ? null : query.state().name();
     String commandId = blankToNull(query.commandId());
     String instanceNo = blankToNull(query.instanceNo());
+    long offset = ((long) page - 1L) * size;
     List<Map<String, Object>> items = tasks.taskItems(
         tenantId, operation, state, commandId, instanceNo, query.startedAt(), query.endedAt(),
-        sort, order, (page - 1) * size, size);
+        sort, order, offset, size);
     long total = tasks.taskCount(
         tenantId, operation, state, commandId, instanceNo, query.startedAt(), query.endedAt());
     return Map.of("items", items, "total", total, "page", page, "size", size);
@@ -119,11 +120,13 @@ public class TaskRecoveryService {
         reconciliationEventId(taskId), commandId, operation,
         failed ? "FAILED" : "SUCCEEDED", callbackState,
         fact.getEngineInstanceId(), "人工对账"), payloadHash());
+    boolean settled = !result.duplicate()
+        && Set.of(TaskState.SUCCEEDED, TaskState.FAILED).contains(result.taskState());
     return Map.of(
         "taskId", result.taskId(),
         "commandId", commandId,
         "status", status,
-        "settled", true,
+        "settled", settled,
         "taskState", result.taskState().name(),
         "instanceStatus", result.instanceStatus().name());
   }

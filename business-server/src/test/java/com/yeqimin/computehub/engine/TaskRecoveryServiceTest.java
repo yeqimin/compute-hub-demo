@@ -33,6 +33,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -108,6 +109,19 @@ class TaskRecoveryServiceTest {
           .containsEntry("operation", "STOP")
           .containsEntry("state", "UNKNOWN");
     });
+  }
+
+  @Test
+  void listAcceptsTheLargestPageWithoutOverflowingItsOffset() {
+    fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
+
+    Map<String, Object> page = service.list(new TaskQuery(
+        null, null, null, null, null, null, null, "createdAt", "desc",
+        Integer.MAX_VALUE, 100));
+
+    assertThat(page).containsEntry("page", Integer.MAX_VALUE).containsEntry("size", 100);
+    assertThat(items(page)).isEmpty();
   }
 
   @Test
@@ -215,6 +229,24 @@ class TaskRecoveryServiceTest {
   }
 
   @Test
+  void legacyCreateInstanceOutboxDispatchesThroughExecuteWithCreateOperation() {
+    Fixture target = fixture(2L, InstanceOperation.CREATE, InstanceStatus.REQUESTED,
+        InstanceStatus.UNKNOWN, InstanceStatus.RUNNING, TaskState.UNKNOWN, 3, "DEAD", false);
+    jdbc.update("UPDATE outbox_event SET event_type='CREATE_INSTANCE' WHERE id=?", target.outboxId());
+    when(engine.execute(any())).thenReturn(CommandAccepted.newBuilder().setAccepted(true).build());
+
+    service.retry(target.taskId());
+    new OutboxWorker(tasks, engine).dispatch();
+
+    verify(engine).execute(argThat(event -> "CREATE".equals(event.get("operation"))
+        && target.commandId().equals(event.get("commandId"))));
+    assertThat(value("SELECT state FROM async_task WHERE id=?", target.taskId()))
+        .isEqualTo("WAITING_CALLBACK");
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", target.instanceId()))
+        .isEqualTo("CREATING");
+  }
+
+  @Test
   void reconcileProcessingAndNotFoundFactsDoNotSettleOrRedispatch() {
     Fixture processing = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
         InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 3, "DEAD", false);
@@ -256,6 +288,25 @@ class TaskRecoveryServiceTest {
         .isEqualTo("STOPPED");
     assertThat(value("SELECT state FROM outbox_event WHERE id=?", fixture.outboxId()))
         .isEqualTo("DONE");
+  }
+
+  @Test
+  void reconcileDoesNotClaimSettlementWhenCallbackStateConflictsWithTheTask() {
+    Fixture fixture = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 3, "DEAD", false);
+    when(engine.status(fixture.commandId())).thenReturn(status(
+        fixture.commandId(), "RUNNING", InstanceOperation.STOP, "RUNNING",
+        "eng-existing-" + fixture.instanceId()));
+
+    Map<String, Object> result = service.reconcile(fixture.taskId());
+
+    assertThat(result).containsEntry("taskId", fixture.taskId())
+        .containsEntry("status", "RUNNING").containsEntry("settled", false)
+        .containsEntry("taskState", "UNKNOWN");
+    assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
+        .isEqualTo("UNKNOWN");
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("UNKNOWN");
   }
 
   @Test
