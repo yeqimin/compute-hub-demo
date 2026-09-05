@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class MockEngineCommandExecutor {
+  private static final Duration PROCESSING_LEASE = Duration.ofSeconds(30);
+
   private final MockEngineCommandRepository repository;
   private final MockEngineCallbackClient callbackClient;
   private final ScheduledExecutorService scheduler;
@@ -66,10 +68,9 @@ public class MockEngineCommandExecutor {
   }
 
   public void recoverPersistedCommands() {
-    for (StoredCommand stored : repository.recoverable()) {
+    for (StoredCommand stored : repository.recoverable(PROCESSING_LEASE)) {
       switch (CommandRecoveryPolicy.action(stored.status(), stored.scenario())) {
         case RESCHEDULE -> schedule(stored.toCommand());
-        case REDELIVER_CALLBACK -> callbackClient.send(callback(stored));
         case NONE -> { }
       }
     }
@@ -83,6 +84,7 @@ public class MockEngineCommandExecutor {
 
   private void execute(InstanceCommand command) {
     try {
+      if (!repository.claimForExecution(command.getCommandId(), PROCESSING_LEASE)) return;
       boolean failed = "FAIL".equals(command.getScenario());
       String status = failed ? "FAILED" : successfulState(command.getOperation());
       String result = failed ? "FAILED" : "SUCCEEDED";
@@ -101,12 +103,6 @@ public class MockEngineCommandExecutor {
     } finally {
       scheduledCommands.remove(command.getCommandId());
     }
-  }
-
-  private CallbackEvent callback(StoredCommand stored) {
-    String result = "FAILED".equals(stored.status()) ? "FAILED" : "SUCCEEDED";
-    return callback(stored.toCommand(), result, stored.status(),
-        stored.engineInstanceId(), stored.resultMessage());
   }
 
   private CallbackEvent callback(

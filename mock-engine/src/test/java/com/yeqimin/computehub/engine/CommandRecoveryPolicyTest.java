@@ -12,11 +12,17 @@ class CommandRecoveryPolicyTest {
   }
 
   @Test
-  void redeliversFinalCallbacksButPreservesTimeoutForReconciliation() {
+  void reschedulesClaimableProcessingCommandsAfterTheirLeaseExpires() {
+    assertThat(CommandRecoveryPolicy.action("PROCESSING", "SUCCESS"))
+        .isEqualTo(CommandRecoveryPolicy.Action.RESCHEDULE);
+  }
+
+  @Test
+  void neverRedeliversCompletedCommandsAfterRestart() {
     assertThat(CommandRecoveryPolicy.action("RUNNING", "SUCCESS"))
-        .isEqualTo(CommandRecoveryPolicy.Action.REDELIVER_CALLBACK);
+        .isEqualTo(CommandRecoveryPolicy.Action.NONE);
     assertThat(CommandRecoveryPolicy.action("FAILED", "FAIL"))
-        .isEqualTo(CommandRecoveryPolicy.Action.REDELIVER_CALLBACK);
+        .isEqualTo(CommandRecoveryPolicy.Action.NONE);
     assertThat(CommandRecoveryPolicy.action("RUNNING", "TIMEOUT"))
         .isEqualTo(CommandRecoveryPolicy.Action.NONE);
   }

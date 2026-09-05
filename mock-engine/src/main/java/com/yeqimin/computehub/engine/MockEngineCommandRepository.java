@@ -3,6 +3,7 @@ package com.yeqimin.computehub.engine;
 import com.yeqimin.computehub.proto.InstanceCommand;
 import com.yeqimin.computehub.proto.InstanceOperation;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -43,17 +44,28 @@ public class MockEngineCommandRepository {
         """, status, emptyToNull(engineInstanceId), resultMessage, commandId);
   }
 
+  public boolean claimForExecution(String commandId, Duration processingLease) {
+    Timestamp expiredBefore = Timestamp.from(Instant.now().minus(processingLease));
+    return jdbc.update("""
+        UPDATE mock_engine_command
+        SET status='PROCESSING', updated_at=CURRENT_TIMESTAMP(3)
+        WHERE command_id=?
+          AND (status='ACCEPTED' OR (status='PROCESSING' AND updated_at < ?))
+        """, commandId, expiredBefore) == 1;
+  }
+
   public Optional<StoredCommand> find(String commandId) {
     return jdbc.query(
         "SELECT " + COLUMNS + " FROM mock_engine_command WHERE command_id=?",
         (result, rowNum) -> map(result), commandId).stream().findFirst();
   }
 
-  public List<StoredCommand> recoverable() {
+  public List<StoredCommand> recoverable(Duration processingLease) {
+    Timestamp expiredBefore = Timestamp.from(Instant.now().minus(processingLease));
     return jdbc.query(
         "SELECT " + COLUMNS + " FROM mock_engine_command "
-            + "WHERE status IN ('ACCEPTED','RUNNING','STOPPED','DELETED','FAILED')",
-        (result, rowNum) -> map(result));
+            + "WHERE status='ACCEPTED' OR (status='PROCESSING' AND updated_at < ?)",
+        (result, rowNum) -> map(result), expiredBefore);
   }
 
   private static StoredCommand map(java.sql.ResultSet result) throws java.sql.SQLException {

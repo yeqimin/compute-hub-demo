@@ -143,7 +143,7 @@ class MockEngineCommandExecutorTest {
   }
 
   @Test
-  void duplicateCommandRemainsDeduplicatedAfterRepositoryReconstruction() {
+  void completedCommandDoesNotRedeliverCallbackAfterRepositoryReconstruction() {
     InstanceCommand command = command(InstanceOperation.CREATE, "SUCCESS");
     executor.accept(command);
     verify(callbackClient, timeout(2000)).send(any());
@@ -157,18 +157,63 @@ class MockEngineCommandExecutorTest {
           reconstructedRepository, reconstructedCallback, reconstructedScheduler,
           Duration.ZERO, Duration.ofMillis(25));
 
-      CommandAccepted duplicate = reconstructedExecutor.accept(command);
+      reconstructedExecutor.recoverPersistedCommands();
 
-      assertThat(duplicate.getAccepted()).isTrue();
-      assertThat(duplicate.getMessage()).isEqualTo("duplicate command accepted");
       assertThat(reconstructedRepository.find(command.getCommandId()).orElseThrow().operation())
           .isEqualTo(InstanceOperation.CREATE);
       assertThat(reconstructedRepository.find(command.getCommandId()).orElseThrow().status())
           .isEqualTo("RUNNING");
-      verify(reconstructedCallback, never()).send(any());
+      await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+          verify(reconstructedCallback, never()).send(any()));
     } finally {
       reconstructedScheduler.shutdownNow();
     }
+  }
+
+  @Test
+  void overlappingExecutorsMustWinOneDurableExecutionClaim() {
+    InstanceCommand command = command(InstanceOperation.START, "SUCCESS");
+    assertThat(repository.insertIfAbsent(command)).isTrue();
+    MockEngineCallbackClient sharedCallback = mock(MockEngineCallbackClient.class);
+    ScheduledExecutorService firstScheduler = Executors.newSingleThreadScheduledExecutor();
+    ScheduledExecutorService secondScheduler = Executors.newSingleThreadScheduledExecutor();
+    try {
+      MockEngineCommandExecutor first = new MockEngineCommandExecutor(
+          new MockEngineCommandRepository(jdbc), sharedCallback, firstScheduler,
+          Duration.ZERO, Duration.ofMillis(25));
+      MockEngineCommandExecutor second = new MockEngineCommandExecutor(
+          new MockEngineCommandRepository(jdbc), sharedCallback, secondScheduler,
+          Duration.ZERO, Duration.ofMillis(25));
+
+      first.recoverPersistedCommands();
+      second.recoverPersistedCommands();
+
+      await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+          verify(sharedCallback, org.mockito.Mockito.times(1)).send(any()));
+      assertThat(repository.find(command.getCommandId()).orElseThrow().status())
+          .isEqualTo("RUNNING");
+    } finally {
+      firstScheduler.shutdownNow();
+      secondScheduler.shutdownNow();
+    }
+  }
+
+  @Test
+  void recoveryExecutesOnlyLeaseExpiredProcessingCommands() {
+    InstanceCommand command = command(InstanceOperation.STOP, "SUCCESS");
+    assertThat(repository.insertIfAbsent(command)).isTrue();
+    jdbc.update("""
+        UPDATE mock_engine_command
+        SET status='PROCESSING', updated_at=CURRENT_TIMESTAMP(3) - INTERVAL 1 MINUTE
+        WHERE command_id=?
+        """, command.getCommandId());
+
+    executor.recoverPersistedCommands();
+
+    await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+        assertThat(repository.find(command.getCommandId()).orElseThrow().status())
+            .isEqualTo("STOPPED"));
+    verify(callbackClient, timeout(2000)).send(any());
   }
 
   private MockEngineCallbackClient.CallbackEvent captureSingleCallback() {
