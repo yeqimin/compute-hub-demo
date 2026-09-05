@@ -4,6 +4,83 @@ import java.util.*;
 import org.apache.ibatis.annotations.*;
 
 public interface TaskMapper {
+  @Insert("INSERT IGNORE INTO inbox_event(engine_event_id,command_id,event_type,payload_hash) VALUES(#{eventId},#{commandId},#{eventType},#{payloadHash})")
+  int insertInbox(Map<String,Object> row);
+
+  @Select("SELECT engine_event_id eventId,command_id commandId,event_type eventType,payload_hash payloadHash FROM inbox_event WHERE engine_event_id=#{eventId}")
+  Map<String,Object> inboxEvent(String eventId);
+
+  @Select("""
+      SELECT t.id taskId,t.instance_id instanceId,t.tenant_id tenantId,
+        t.command_id commandId,t.operation_type operation,t.state taskState,
+        t.previous_instance_status previousStatus,
+        t.target_instance_status targetStatus,t.retry_count retryCount,
+        t.actor_id actorId,o.order_no orderNo,o.amount_cent amountCent
+      FROM async_task t
+      JOIN compute_instance i ON i.id=t.instance_id
+      JOIN compute_order o ON o.id=i.order_id
+      WHERE t.command_id=#{commandId}
+      FOR UPDATE
+      """)
+  Map<String,Object> callbackTaskForUpdate(String commandId);
+
+  @Select("""
+      SELECT id,status,active_task_id activeTaskId,
+        engine_instance_id engineInstanceId
+      FROM compute_instance
+      WHERE id=#{instanceId}
+      FOR UPDATE
+      """)
+  Map<String,Object> callbackInstanceForUpdate(long instanceId);
+
+  @Select("""
+      SELECT t.id taskId,t.instance_id instanceId,t.state taskState,
+        i.status instanceStatus
+      FROM async_task t
+      JOIN compute_instance i ON i.id=t.instance_id
+      WHERE t.command_id=#{commandId}
+      """)
+  Map<String,Object> callbackResult(String commandId);
+
+  @Update("""
+      UPDATE async_task
+      SET state=#{state},engine_event_id=#{eventId},last_error=#{error},
+        finished_at=NOW(3),version=version+1
+      WHERE id=#{taskId}
+      """)
+  int finishCallbackTask(
+      @Param("taskId")long taskId,
+      @Param("state")String state,
+      @Param("eventId")String eventId,
+      @Param("error")String error);
+
+  @Update("""
+      UPDATE compute_instance
+      SET status=#{status},
+        engine_instance_id=COALESCE(#{engineId},engine_instance_id),
+        active_task_id=NULL,
+        deleted_at=CASE WHEN #{status}='DELETED' THEN NOW(3) ELSE deleted_at END,
+        version=version+1
+      WHERE id=#{instanceId} AND active_task_id=#{taskId}
+      """)
+  int finishCallbackInstance(
+      @Param("instanceId")long instanceId,
+      @Param("taskId")long taskId,
+      @Param("status")String status,
+      @Param("engineId")String engineId);
+
+  @Update("""
+      UPDATE compute_order o
+      JOIN compute_instance i ON i.order_id=o.id
+      JOIN async_task t ON t.instance_id=i.id
+      SET o.status=#{status}
+      WHERE t.id=#{taskId} AND t.operation_type='CREATE'
+      """)
+  int finishCreationOrder(@Param("taskId")long taskId,@Param("status")String status);
+
+  @Update("UPDATE outbox_event SET state='DONE',last_error=NULL WHERE task_id=#{taskId}")
+  int outboxDoneForTask(long taskId);
+
   @Select("SELECT o.id,o.event_id eventId,o.aggregate_id instanceId,o.payload,o.retry_count retryCount,t.id taskId,t.command_id commandId,t.tenant_id tenantId,t.retry_count taskRetryCount,i.instance_no instanceNo,i.product_id productId,i.scenario,c.code clusterCode FROM outbox_event o JOIN async_task t ON t.id=o.task_id JOIN compute_instance i ON i.id=o.aggregate_id JOIN compute_cluster c ON c.id=i.cluster_id WHERE o.event_type='CREATE_INSTANCE' AND o.state='READY' AND o.next_retry_at<=NOW(3) ORDER BY o.id LIMIT 1 FOR UPDATE SKIP LOCKED") Map<String,Object> nextOutbox();
   @Update("UPDATE outbox_event SET state='WAITING_CALLBACK',last_error=NULL WHERE id=#{id}") int outboxWaiting(long id);
   @Update("UPDATE async_task SET state='WAITING_CALLBACK',deadline_at=DATE_ADD(NOW(3),INTERVAL 3 SECOND),last_error=NULL,version=version+1 WHERE id=#{id}") int taskWaiting(long id);

@@ -10,6 +10,8 @@ public interface BillingMapper {
   Map<String,Object> wallet(long tenantId);
   @Update("UPDATE tenant_wallet SET available_cent=#{available},frozen_cent=#{frozen},version=version+1 WHERE tenant_id=#{tenantId} AND #{available}>=0 AND #{frozen}>=0")
   int updateWallet(@Param("tenantId")long tenantId,@Param("available")long available,@Param("frozen")long frozen);
+  @Update("UPDATE tenant_wallet SET available_cent=available_cent+#{released},frozen_cent=frozen_cent-#{amount},version=version+1 WHERE tenant_id=#{tenantId} AND frozen_cent>=#{amount}")
+  int settleFrozen(@Param("tenantId")long tenantId,@Param("amount")long amount,@Param("released")long released);
   @Insert("INSERT IGNORE INTO wallet_ledger(ledger_no,tenant_id,biz_no,type,delta_available_cent,delta_frozen_cent,available_after_cent,frozen_after_cent,remark) VALUES(#{ledgerNo},#{tenantId},#{bizNo},#{type},#{deltaAvailable},#{deltaFrozen},#{availableAfter},#{frozenAfter},#{remark})")
   int insertLedger(Map<String,Object> row);
   @Select("SELECT id,ledger_no ledgerNo,tenant_id tenantId,biz_no bizNo,type,delta_available_cent deltaAvailableCent,delta_frozen_cent deltaFrozenCent,available_after_cent availableAfterCent,frozen_after_cent frozenAfterCent,remark,created_at createdAt FROM wallet_ledger WHERE tenant_id=#{tenantId} ORDER BY created_at DESC,id DESC LIMIT #{size} OFFSET #{offset}")
