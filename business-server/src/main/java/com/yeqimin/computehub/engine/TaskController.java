@@ -55,7 +55,8 @@ public class TaskController {
     if (!commandId.equals(state.getCommandId())) {
       throw BusinessException.conflict("引擎返回的命令与请求任务不一致");
     }
-    if (!operation.name().equals(state.getOperation().name())) {
+    if (!"NOT_FOUND".equals(state.getStatus())
+        && !operation.name().equals(state.getOperation().name())) {
       throw BusinessException.conflict("引擎返回的操作与请求任务不一致");
     }
   }

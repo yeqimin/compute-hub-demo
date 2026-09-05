@@ -9,11 +9,16 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import com.yeqimin.computehub.proto.CommandAccepted;
+import com.yeqimin.computehub.proto.CommandStatusReply;
+import com.yeqimin.computehub.proto.CommandStatusRequest;
 import com.yeqimin.computehub.proto.InstanceCommand;
 import com.yeqimin.computehub.proto.InstanceOperation;
+import io.grpc.stub.StreamObserver;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import org.junit.jupiter.api.AfterEach;
@@ -140,6 +145,42 @@ class MockEngineCommandExecutorTest {
         assertThat(repository.find(command.getCommandId()).orElseThrow().status())
             .isEqualTo("DELETED"));
     verify(callbackClient, never()).send(any());
+  }
+
+  @Test
+  void unknownCommandStatusEchoesCommandIdWithNotFoundAndUnspecifiedOperation() {
+    String commandId = "CMD-MISSING-" + UUID.randomUUID();
+    MockComputeEngineService service = new MockComputeEngineService(executor, repository);
+    AtomicReference<CommandStatusReply> response = new AtomicReference<>();
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    AtomicBoolean completed = new AtomicBoolean();
+
+    service.getCommandStatus(
+        CommandStatusRequest.newBuilder().setCommandId(commandId).build(),
+        new StreamObserver<>() {
+          @Override
+          public void onNext(CommandStatusReply value) {
+            response.set(value);
+          }
+
+          @Override
+          public void onError(Throwable throwable) {
+            failure.set(throwable);
+          }
+
+          @Override
+          public void onCompleted() {
+            completed.set(true);
+          }
+        });
+
+    assertThat(failure.get()).isNull();
+    assertThat(completed).isTrue();
+    assertThat(response.get()).isNotNull();
+    assertThat(response.get().getCommandId()).isEqualTo(commandId);
+    assertThat(response.get().getStatus()).isEqualTo("NOT_FOUND");
+    assertThat(response.get().getOperation())
+        .isEqualTo(InstanceOperation.INSTANCE_OPERATION_UNSPECIFIED);
   }
 
   @Test

@@ -163,6 +163,112 @@ class LifecycleRecoveryTest {
   }
 
   @Test
+  void missingEngineCommandRetriesTheExactUnknownTaskWithoutSettlement() {
+    Fixture fixture = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
+    long historicalTaskId = insertTask(fixture.instanceId(), 2L, InstanceOperation.RESTART,
+        InstanceStatus.RUNNING, InstanceStatus.RUNNING, TaskState.UNKNOWN, 2, false);
+    long historicalOutboxId = insertOutbox(fixture.instanceId(), historicalTaskId, "DEAD");
+    when(engine.status(fixture.commandId())).thenReturn(missingStatus(fixture.commandId()));
+
+    controller.retry(fixture.taskId());
+
+    assertThat(row("SELECT state,retry_count,manual_retry_count,command_id FROM async_task WHERE id=?",
+        fixture.taskId()))
+        .containsEntry("state", "READY")
+        .containsEntry("retry_count", 0)
+        .containsEntry("manual_retry_count", 1)
+        .containsEntry("command_id", fixture.commandId());
+    assertThat(row("SELECT state,command_id FROM outbox_event WHERE id=?", fixture.outboxId()))
+        .containsEntry("state", "READY")
+        .containsEntry("command_id", fixture.commandId());
+    assertThat(value("SELECT state FROM async_task WHERE id=?", historicalTaskId))
+        .isEqualTo("UNKNOWN");
+    assertThat(value("SELECT state FROM outbox_event WHERE id=?", historicalOutboxId))
+        .isEqualTo("DEAD");
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("STOPPING");
+    assertThat(count("SELECT COUNT(*) FROM inbox_event")).isZero();
+  }
+
+  @Test
+  void missingEngineCommandStillRequiresAnExactCommandId() {
+    Fixture fixture = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
+    when(engine.status(fixture.commandId())).thenReturn(missingStatus("CMD-DIFFERENT"));
+
+    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("命令");
+    assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
+        .isEqualTo("UNKNOWN");
+    assertThat(value("SELECT state FROM outbox_event WHERE id=?", fixture.outboxId()))
+        .isEqualTo("DEAD");
+    assertThat(count("SELECT COUNT(*) FROM inbox_event")).isZero();
+  }
+
+  @Test
+  void missingEngineCommandCannotRetryANonUnknownTask() {
+    Fixture fixture = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.STOPPING, InstanceStatus.STOPPED, TaskState.PENDING, 1, "READY", false);
+    when(engine.status(fixture.commandId())).thenReturn(missingStatus(fixture.commandId()));
+
+    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("无需人工重试");
+    assertThat(row("SELECT state,retry_count,manual_retry_count FROM async_task WHERE id=?",
+        fixture.taskId()))
+        .containsEntry("state", "PENDING")
+        .containsEntry("retry_count", 1)
+        .containsEntry("manual_retry_count", 0);
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("STOPPING");
+  }
+
+  @Test
+  void missingEngineCommandCannotCrossTenantBoundary() {
+    Fixture fixture = fixture(1L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
+
+    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("任务不存在");
+    assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
+        .isEqualTo("UNKNOWN");
+    assertThat(value("SELECT state FROM outbox_event WHERE id=?", fixture.outboxId()))
+        .isEqualTo("DEAD");
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("UNKNOWN");
+  }
+
+  @Test
+  void missingEngineCommandRecoveryRollsBackThroughSpringProxyWhenTaskIsNotActive() {
+    Fixture fixture = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
+        InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
+    long activeTaskId = insertTask(fixture.instanceId(), 2L, InstanceOperation.RESTART,
+        InstanceStatus.RUNNING, InstanceStatus.RUNNING, TaskState.UNKNOWN, 2, false);
+    jdbc.update("UPDATE compute_instance SET active_task_id=? WHERE id=?",
+        activeTaskId, fixture.instanceId());
+    when(engine.status(fixture.commandId())).thenReturn(missingStatus(fixture.commandId()));
+
+    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("恢复状态已变更");
+
+    assertThat(row("SELECT state,retry_count,manual_retry_count FROM async_task WHERE id=?",
+        fixture.taskId()))
+        .containsEntry("state", "UNKNOWN")
+        .containsEntry("retry_count", 2)
+        .containsEntry("manual_retry_count", 0);
+    assertThat(value("SELECT state FROM outbox_event WHERE id=?", fixture.outboxId()))
+        .isEqualTo("DEAD");
+    assertThat(number(row("SELECT active_task_id FROM compute_instance WHERE id=?",
+        fixture.instanceId()), "active_task_id")).isEqualTo(activeTaskId);
+    assertThat(value("SELECT status FROM compute_instance WHERE id=?", fixture.instanceId()))
+        .isEqualTo("UNKNOWN");
+  }
+
+  @Test
   void reconciliationRejectsAnEngineCommandFromAnotherTenant() {
     Fixture requested = fixture(2L, InstanceOperation.STOP, InstanceStatus.RUNNING,
         InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
@@ -294,6 +400,15 @@ class LifecycleRecoveryTest {
         .setOperation(com.yeqimin.computehub.proto.InstanceOperation.valueOf(operation.name()))
         .setInstanceState(instanceState)
         .setEngineInstanceId(engineInstanceId)
+        .build();
+  }
+
+  private static CommandStatusReply missingStatus(String commandId) {
+    return CommandStatusReply.newBuilder()
+        .setCommandId(commandId)
+        .setStatus("NOT_FOUND")
+        .setOperation(com.yeqimin.computehub.proto.InstanceOperation
+            .INSTANCE_OPERATION_UNSPECIFIED)
         .build();
   }
 
