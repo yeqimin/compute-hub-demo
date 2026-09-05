@@ -166,6 +166,7 @@ Outbox 状态使用 `READY`、`PUBLISHING`、`SENT`、`DONE`、`DEAD`。`PUBLISH
 
 - `operation_audit_log`：追加式记录操作人、租户、实例、任务、动作、前后状态、结果、错误、traceId 和时间。不提供修改或删除接口。
 - `realtime_event`：追加式记录 SSE 事件序号、租户、类型、聚合编号和负载，为 `Last-Event-ID` 断线续传提供依据。演示环境保留 7 天。
+- `dead_letter_record`：保存已从 RabbitMQ 死信队列归档的消息号、可解析的任务与租户、原始负载、失败原因、状态和重新投递信息。`message_id` 唯一，使死信消费也可幂等。
 
 ### 5.5 `mock_engine_command`
 
@@ -222,14 +223,14 @@ GetClusterMetrics(MetricsRequest) returns (ClusterMetricsReply)
 - 暂时性 gRPC 故障使用 2、4、8 秒三级延迟队列重试，所有自动重试复用同一 `command_id`。
 - 将重试消息确认发布到延迟队列后，才 ACK 原消息；如果此时崩溃，最多产生重复，不会丢消息。
 - 三次自动重试耗尽后，任务与实例进入 `UNKNOWN`，不做错误退款。
-- 结构错误、关键字段缺失等不可恢复消息进入死信队列。能从消息中定位任务时将其标记为 `DEAD`；无法定位时只写入死信和系统审计，不猜测业务任务。
+- 结构错误、关键字段缺失等不可恢复消息进入死信队列。独立死信归档消费者将原始负载和失败头写入 `dead_letter_record` 后 ACK。能定位任务时将其标记为 `DEAD`；无法定位时只写入死信记录和系统审计，不猜测业务任务。
 
 ### 7.4 人工重试与对账
 
 - 人工重试仅适用于 `UNKNOWN` 任务，重新激活原任务并复用原 `command_id`，同时累加 `manual_retry_count`。
 - 人工对账创建 `RECONCILE` 任务，通过 `source_task_id` 引用原任务，调用 gRPC `GetCommandStatus`。
 - 引擎返回明确结果时按原操作收敛；引擎仍无事实时保持 `UNKNOWN`。
-- 死信重新投递仅限平台管理员，投递前再次校验负载与任务状态。
+- 死信重新投递仅限平台管理员，投递前从 `dead_letter_record` 读取已归档负载，再次校验消息版本、任务和租户。无法定位任务的死信只允许查看，不允许盲目重投。
 
 ## 8. REST API 与权限
 
