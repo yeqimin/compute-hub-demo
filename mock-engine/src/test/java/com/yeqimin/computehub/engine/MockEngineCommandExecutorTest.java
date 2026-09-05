@@ -171,6 +171,34 @@ class MockEngineCommandExecutorTest {
   }
 
   @Test
+  void duplicateAcceptAfterRepositoryReconstructionExecutesOnlyOnce() {
+    InstanceCommand command = command(InstanceOperation.CREATE, "SUCCESS");
+    executor.accept(command);
+    verify(callbackClient, timeout(2000)).send(any());
+
+    MockEngineCommandRepository reconstructedRepository =
+        new MockEngineCommandRepository(jdbc);
+    ScheduledExecutorService reconstructedScheduler = Executors.newSingleThreadScheduledExecutor();
+    try {
+      MockEngineCommandExecutor reconstructedExecutor = new MockEngineCommandExecutor(
+          reconstructedRepository, callbackClient, reconstructedScheduler,
+          Duration.ZERO, Duration.ofMillis(25));
+
+      CommandAccepted duplicate = reconstructedExecutor.accept(command);
+
+      assertThat(duplicate.getAccepted()).isTrue();
+      assertThat(duplicate.getMessage()).isEqualTo("duplicate command accepted");
+      assertThat(jdbc.queryForObject(
+          "SELECT COUNT(*) FROM mock_engine_command WHERE command_id=?",
+          Integer.class, command.getCommandId())).isEqualTo(1);
+      await().during(Duration.ofMillis(300)).atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+          verify(callbackClient, org.mockito.Mockito.times(1)).send(any()));
+    } finally {
+      reconstructedScheduler.shutdownNow();
+    }
+  }
+
+  @Test
   void overlappingExecutorsMustWinOneDurableExecutionClaim() {
     InstanceCommand command = command(InstanceOperation.START, "SUCCESS");
     assertThat(repository.insertIfAbsent(command)).isTrue();
