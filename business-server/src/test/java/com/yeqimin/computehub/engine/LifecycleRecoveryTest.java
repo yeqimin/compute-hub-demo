@@ -55,6 +55,7 @@ class LifecycleRecoveryTest {
   }
 
   @MockitoBean OutboxWorker scheduledOutboxWorker;
+  @MockitoBean TaskTimeoutScheduler scheduledTaskTimeoutScheduler;
   @MockitoBean EngineClient engine;
   @Autowired TaskMapper tasks;
   @Autowired InstanceMapper instances;
@@ -124,7 +125,7 @@ class LifecycleRecoveryTest {
       InstanceStatus executing,
       InstanceStatus target) {
     Fixture fixture = fixture(2L, operation, previous, executing, target,
-        TaskState.WAITING_CALLBACK, 2, "WAITING_CALLBACK", true);
+        TaskState.WAITING_CALLBACK, 3, "WAITING_CALLBACK", true);
     OutboxWorker worker = new OutboxWorker(tasks, engine);
 
     worker.expireCallbacks();
@@ -197,7 +198,7 @@ class LifecycleRecoveryTest {
         InstanceStatus.UNKNOWN, InstanceStatus.STOPPED, TaskState.UNKNOWN, 2, "DEAD", false);
     when(engine.status(fixture.commandId())).thenReturn(missingStatus("CMD-DIFFERENT"));
 
-    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+    assertThatThrownBy(() -> controller.reconcile(fixture.taskId()))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("命令");
     assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))
@@ -278,7 +279,7 @@ class LifecycleRecoveryTest {
         otherTenant.commandId(), "STOPPED", InstanceOperation.STOP,
         "STOPPED", "eng-other"));
 
-    assertThatThrownBy(() -> controller.retry(requested.taskId()))
+    assertThatThrownBy(() -> controller.reconcile(requested.taskId()))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("命令");
     assertThat(value("SELECT state FROM async_task WHERE id=?", otherTenant.taskId()))
@@ -295,7 +296,7 @@ class LifecycleRecoveryTest {
     when(engine.status(fixture.commandId())).thenReturn(status(
         fixture.commandId(), "RUNNING", InstanceOperation.START, "RUNNING", "eng-existing"));
 
-    assertThatThrownBy(() -> controller.retry(fixture.taskId()))
+    assertThatThrownBy(() -> controller.reconcile(fixture.taskId()))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("操作");
     assertThat(value("SELECT state FROM async_task WHERE id=?", fixture.taskId()))

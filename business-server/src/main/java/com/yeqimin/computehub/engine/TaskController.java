@@ -1,64 +1,61 @@
 package com.yeqimin.computehub.engine;
 
-import com.yeqimin.computehub.common.*;
+import com.yeqimin.computehub.common.ApiResponse;
 import com.yeqimin.computehub.domain.InstanceOperation;
-import com.yeqimin.computehub.domain.InstanceStatus;
-import com.yeqimin.computehub.proto.CommandStatusReply;
-import com.yeqimin.computehub.persistence.*;
-import com.yeqimin.computehub.security.*;
-import java.util.*;
+import com.yeqimin.computehub.domain.TaskState;
+import java.time.LocalDateTime;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-@RestController @RequestMapping("/api/v1/tasks")
+@RestController
+@RequestMapping("/api/v1/tasks")
 public class TaskController {
-  private final InstanceMapper instances;private final TaskMapper tasks;private final EngineClient engine;private final SettlementService settlement;
-  public TaskController(InstanceMapper instances,TaskMapper tasks,EngineClient engine,SettlementService settlement){this.instances=instances;this.tasks=tasks;this.engine=engine;this.settlement=settlement;}
+  private final TaskRecoveryService service;
+
+  public TaskController(TaskRecoveryService service) {
+    this.service = service;
+  }
+
+  @GetMapping
+  public ApiResponse<?> list(
+      @RequestParam(required = false) Long tenantId,
+      @RequestParam(required = false) InstanceOperation operation,
+      @RequestParam(required = false) TaskState state,
+      @RequestParam(required = false) String commandId,
+      @RequestParam(required = false) String instanceNo,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+          LocalDateTime startedAt,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+          LocalDateTime endedAt,
+      @RequestParam(defaultValue = "createdAt") String sort,
+      @RequestParam(defaultValue = "desc") String order,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    return ApiResponse.ok(service.list(new TaskQuery(
+        tenantId, operation, state, commandId, instanceNo, startedAt, endedAt,
+        sort, order, page, size)));
+  }
+
+  @GetMapping("/{id}")
+  public ApiResponse<?> detail(@PathVariable long id) {
+    return ApiResponse.ok(service.detail(id));
+  }
+
   @PostMapping("/{id}/retry")
   @PreAuthorize("hasAuthority('instance:retry')")
-  @Transactional
   public ApiResponse<?> retry(@PathVariable long id) {
-    Map<String,Object> task = instances.task(id);
-    if (task == null) throw BusinessException.notFound("任务不存在");
-    UserPrincipal user = CurrentUser.get();
-    if (!user.platformAdmin() && num(task,"tenantId") != user.tenantId()) {
-      throw BusinessException.notFound("任务不存在");
-    }
-    String commandId = String.valueOf(task.get("commandId"));
-    InstanceOperation operation = InstanceOperation.valueOf(String.valueOf(task.get("operation")));
-    CommandStatusReply state = engine.status(commandId);
-    validateEngineIdentity(state, commandId, operation);
-    if (Set.of("RUNNING","STOPPED","DELETED","FAILED").contains(state.getStatus())) {
-      String result = "FAILED".equals(state.getStatus()) ? "FAILED" : "SUCCEEDED";
-      String instanceState = state.getInstanceState().isBlank()
-          ? state.getStatus() : state.getInstanceState();
-      return ApiResponse.ok(settlement.settle(new EngineEventRequest(
-          "RECON-" + UUID.randomUUID(), commandId, operation, result,
-          InstanceStatus.valueOf(instanceState), state.getEngineInstanceId(), "人工对账"),
-          UUID.randomUUID().toString().replace("-", "")));
-    }
-    if (!"UNKNOWN".equals(task.get("taskState"))) {
-      throw BusinessException.conflict("任务当前无需人工重试");
-    }
-    long instanceId = num(task, "instanceId");
-    if (tasks.manualRetry(id) != 1
-        || tasks.manualOutbox(id) != 1
-        || tasks.restoreExecuting(instanceId, id, OutboxWorker.executing(operation).name()) != 1) {
-      throw BusinessException.conflict("任务恢复状态已变更");
-    }
-    return ApiResponse.ok(Map.of("status", "RETRYING"));
+    return ApiResponse.ok(service.retry(id));
   }
 
-  private static void validateEngineIdentity(
-      CommandStatusReply state, String commandId, InstanceOperation operation) {
-    if (!commandId.equals(state.getCommandId())) {
-      throw BusinessException.conflict("引擎返回的命令与请求任务不一致");
-    }
-    if (!"NOT_FOUND".equals(state.getStatus())
-        && !operation.name().equals(state.getOperation().name())) {
-      throw BusinessException.conflict("引擎返回的操作与请求任务不一致");
-    }
+  @PostMapping("/{id}/reconcile")
+  @PreAuthorize("hasAuthority('instance:retry')")
+  public ApiResponse<?> reconcile(@PathVariable long id) {
+    return ApiResponse.ok(service.reconcile(id));
   }
-  private static long num(Map<String,Object>m,String k){return((Number)m.get(k)).longValue();}
 }

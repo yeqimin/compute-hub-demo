@@ -44,6 +44,7 @@ class SettlementServiceTest {
   }
 
   @MockitoBean OutboxWorker outboxWorker;
+  @MockitoBean TaskTimeoutScheduler taskTimeoutScheduler;
   @Autowired SettlementService settlement;
   @Autowired JdbcTemplate jdbc;
 
