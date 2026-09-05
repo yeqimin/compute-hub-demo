@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { appLocale } from './locale'
 import { useAuthStore } from './stores/auth'
 import { useUiStore } from './stores/ui'
 import { hasAnyRole } from './utils/permissions'
@@ -30,4 +31,4 @@ const themeLabel = computed(() => ui.theme === 'light' ? '亮色主题' : ui.the
 const cycleTheme = () => ui.setTheme(ui.theme === 'light' ? 'dark' : ui.theme === 'dark' ? 'system' : 'light')
 const quit = () => { auth.logout(); router.push('/login') }
 </script>
-<template><router-view v-if="route.path==='/login'"/><div v-else class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">C</div><div><strong>ComputeHub</strong><small>算力调度平台</small></div></div><el-menu :default-active="active" router><el-menu-item v-for="menu in visibleMenus" :key="menu.path" :index="menu.path"><el-icon><component :is="menu.icon"/></el-icon><span>{{menu.label}}</span></el-menu-item></el-menu><div class="side-foot"><div class="avatar">{{auth.user?.displayName?.slice(0,1)}}</div><div class="who"><strong>{{auth.user?.displayName}}</strong><small>{{auth.user?.roles?.[0]}}</small></div><el-tooltip :content="themeLabel"><el-button text circle @click="cycleTheme"><el-icon><component :is="themeIcon"/></el-icon></el-button></el-tooltip><el-button text circle :icon="SwitchButton" @click="quit"/></div></aside><main><header><div><span class="eyebrow">COMPUTE OPERATIONS</span><h2>{{currentMenu?.label}}</h2></div><div class="live"><i/>系统运行正常</div></header><section class="page"><router-view/></section></main></div></template>
+<template><el-config-provider :locale="appLocale"><router-view v-if="route.path==='/login'"/><div v-else class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">C</div><div><strong>ComputeHub</strong><small>算力调度平台</small></div></div><el-menu :default-active="active" router><el-menu-item v-for="menu in visibleMenus" :key="menu.path" :index="menu.path"><el-icon><component :is="menu.icon"/></el-icon><span>{{menu.label}}</span></el-menu-item></el-menu><div class="side-foot"><div class="avatar">{{auth.user?.displayName?.slice(0,1)}}</div><div class="who"><strong>{{auth.user?.displayName}}</strong><small>{{auth.user?.roles?.[0]}}</small></div><el-tooltip :content="themeLabel"><el-button text circle @click="cycleTheme"><el-icon><component :is="themeIcon"/></el-icon></el-button></el-tooltip><el-button text circle :icon="SwitchButton" @click="quit"/></div></aside><main><header><div><span class="eyebrow">COMPUTE OPERATIONS</span><h2>{{currentMenu?.label}}</h2></div><div class="live"><i/>系统运行正常</div></header><section class="page"><router-view/></section></main></div></el-config-provider></template>

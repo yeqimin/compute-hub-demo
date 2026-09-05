@@ -15,20 +15,24 @@ export function usePageQuery<T, TFilters extends object>(
   const size = ref(initialPage.size)
   const loading = ref(false)
   const error = ref<Error | null>(null)
+  let requestSequence = 0
 
   const load = async () => {
+    const requestId = ++requestSequence
     loading.value = true
     error.value = null
     try {
       const result = await fetchPage({ ...filters, page: page.value, size: size.value })
+      if (requestId !== requestSequence) return
       items.value = result.items
       total.value = result.total
       page.value = result.page
       size.value = result.size
     } catch (reason) {
+      if (requestId !== requestSequence) return
       error.value = reason instanceof Error ? reason : new Error('请求失败')
     } finally {
-      loading.value = false
+      if (requestId === requestSequence) loading.value = false
     }
   }
 

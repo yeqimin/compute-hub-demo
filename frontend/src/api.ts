@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { ApiError, type ApiResponse } from './types/api'
 
 type ApiClient = {
@@ -10,6 +11,16 @@ type ApiClient = {
 }
 
 export const http: AxiosInstance = axios.create({ baseURL: '/api/v1', timeout: 10000 })
+
+export const authNavigation = {
+  redirectToLogin: (path: string) => window.location.assign(path),
+}
+
+export const handleUnauthorized = () => {
+  localStorage.removeItem('compute-token')
+  localStorage.removeItem('compute-user')
+  authNavigation.redirectToLogin('/login')
+}
 
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('compute-token')
@@ -34,9 +45,7 @@ http.interceptors.response.use(
     )
     ElMessage.error(error.message)
     if (error.status === 401) {
-      localStorage.removeItem('compute-token')
-      localStorage.removeItem('compute-user')
-      window.location.assign('/login')
+      handleUnauthorized()
     }
     return Promise.reject(error)
   },

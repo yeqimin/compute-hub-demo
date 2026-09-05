@@ -15,8 +15,28 @@ const systemTheme = () => window.matchMedia?.('(prefers-color-scheme: dark)').ma
 export const useUiStore = defineStore('ui', () => {
   const theme = ref<ThemePreference>(readTheme())
   const resolvedTheme = computed<'light' | 'dark'>(() => theme.value === 'system' ? systemTheme() : theme.value)
+  let mediaQuery: MediaQueryList | undefined
+  let onSystemThemeChange: ((event: MediaQueryListEvent) => void) | undefined
+
+  const stopSystemThemeListener = () => {
+    if (mediaQuery && onSystemThemeChange) mediaQuery.removeEventListener?.('change', onSystemThemeChange)
+    mediaQuery = undefined
+    onSystemThemeChange = undefined
+  }
+
+  const syncSystemThemeListener = () => {
+    stopSystemThemeListener()
+    if (theme.value !== 'system') return
+    mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!mediaQuery) return
+    onSystemThemeChange = () => {
+      document.documentElement.dataset.theme = systemTheme()
+    }
+    mediaQuery.addEventListener?.('change', onSystemThemeChange)
+  }
 
   const applyTheme = () => {
+    syncSystemThemeListener()
     document.documentElement.dataset.theme = resolvedTheme.value
   }
 
