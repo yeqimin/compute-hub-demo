@@ -23,6 +23,12 @@
 - The Spring scheduler logged connection errors while the temporary database was shutting down; assertions and Maven result were unaffected. Disabling schedulers in focused integration-test profiles remains a test-hygiene follow-up.
 - The Java 21 Mockito run emitted its existing dynamic-agent/JDK warning. It does not affect the frontend warning-free build requirement.
 
+## Controller verification after tenant-isolation fix
+
+- Reran `DashboardMapperIntegrationTest,DashboardServiceTest,DashboardControllerTest` with Java 21 and a real MySQL 8.4 Testcontainer.
+- Result: 5 tests, 0 failures, 0 errors, 0 skipped; `BUILD SUCCESS`.
+- Scheduling was disabled for the focused mapper integration profile, so the earlier temporary-database shutdown noise did not recur.
+
 ## Review fix — tenant metric isolation
 
 - Platform administrators retain engine-wide physical GPU/CPU/memory utilization. Tenant requests now return only clusters used by that tenant and label them `TENANT_SHARED_METRICS_SUPPRESSED`; shared physical utilization fields are omitted rather than presented as tenant values.
