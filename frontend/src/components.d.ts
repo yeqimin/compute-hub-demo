@@ -52,6 +52,8 @@ declare module 'vue' {
     InstanceTable: typeof import('./components/instances/InstanceTable.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    TaskDetailDrawer: typeof import('./components/tasks/TaskDetailDrawer.vue')['default']
+    TaskTimeline: typeof import('./components/tasks/TaskTimeline.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

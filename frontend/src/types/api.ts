@@ -42,10 +42,28 @@ export interface AsyncTask {
   taskNo: string
   commandId: string
   instanceId: number
+  instanceNo?: string
+  instanceName?: string
+  tenantId?: number
+  tenantName?: string
   operation: 'CREATE' | InstanceAction | 'RECONCILE'
   state: TaskState
   retryCount: number
+  manualRetryCount?: number
   lastError?: string
+  messageId?: string
+  engineEventId?: string
+  outboxId?: number
+  outboxEventId?: string
+  outboxState?: string
+  outboxRetryCount?: number
+  outboxLastError?: string
+  outboxCreatedAt?: string
+  outboxPublishedAt?: string
+  acceptedAt?: string
+  finishedAt?: string
+  deadlineAt?: string
+  sourceTaskId?: number
   createdAt?: string
   updatedAt?: string
 }
