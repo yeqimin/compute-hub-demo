@@ -25,7 +25,8 @@ public class CatalogService {
   }
   @Transactional public void assignRoles(long userId,Set<String> roleCodes) {
     UserPrincipal caller=CurrentUser.get(); Map<String,Object> target=mapper.user(userId); if(target==null)throw BusinessException.notFound("用户不存在");
-    if(!caller.platformAdmin() && !Objects.equals(caller.tenantId(),number(target,"tenantId"))) throw BusinessException.forbidden("不能修改其他租户用户");
+    Object targetTenantId=target.get("tenantId");
+    if(!caller.platformAdmin() && (!(targetTenantId instanceof Number tenantId) || !Objects.equals(caller.tenantId(),tenantId.longValue()))) throw BusinessException.forbidden("不能修改其他租户用户");
     List<Map<String,Object>> roles=mapper.rolesByCodes(roleCodes); if(roles.size()!=roleCodes.size())throw BusinessException.badRequest("包含不存在的角色");
     if(!caller.platformAdmin() && roles.stream().anyMatch(role -> "PLATFORM_ADMIN".equals(role.get("code")))) throw BusinessException.forbidden("租户管理员不能授予平台管理员角色");
     if(!caller.platformAdmin() && userId==caller.id() && roleCodes.stream().noneMatch("TENANT_ADMIN"::equals))throw BusinessException.conflict("不能移除当前租户管理员角色");
@@ -35,12 +36,12 @@ public class CatalogService {
   }
   @Transactional public void setUserEnabled(long userId,boolean enabled) {
     UserPrincipal caller=CurrentUser.get(); Map<String,Object> target=mapper.user(userId); if(target==null)throw BusinessException.notFound("用户不存在");
-    if(!caller.platformAdmin() && !Objects.equals(caller.tenantId(),number(target,"tenantId")))throw BusinessException.forbidden("不能修改其他租户用户");
+    Object targetTenantId=target.get("tenantId");
+    if(!caller.platformAdmin() && (!(targetTenantId instanceof Number tenantId) || !Objects.equals(caller.tenantId(),tenantId.longValue())))throw BusinessException.forbidden("不能修改其他租户用户");
     if(userId==caller.id() && !enabled)throw BusinessException.conflict("不能停用当前登录管理员");
     if(!enabled && mapper.userRoleCodes(userId).contains("PLATFORM_ADMIN") && mapper.enabledPlatformAdminCount()<=1)throw BusinessException.conflict("不能停用最后一个平台管理员");
     mapper.setUserEnabled(userId,enabled);
   }
-  public List<Map<String,Object>> roles() { return mapper.roles(); }
   public Map<String,Object> products(String keyword,Boolean enabled,int page,int size) { return page(mapper.products(blank(keyword),enabled,offset(page,size),safeSize(size)),mapper.productCount(blank(keyword),enabled),page,size); }
   public Map<String,Object> product(long id) { Map<String,Object> row=mapper.product(id); if(row==null) throw BusinessException.notFound("产品不存在"); return row; }
   @Transactional public Map<String,Object> saveProduct(Long id, Map<String,Object> row) { row.put("enabled", row.getOrDefault("enabled",true)); if(id==null){mapper.insertProduct(row);}else{row.put("id",id);if(mapper.updateProduct(row)==0)throw BusinessException.notFound("产品不存在");} return row; }

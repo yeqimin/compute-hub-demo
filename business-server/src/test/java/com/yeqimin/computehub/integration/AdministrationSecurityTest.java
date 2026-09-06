@@ -44,16 +44,22 @@ class AdministrationSecurityTest {
   @Test void productSearchIsServerPagedAndViewerCannotMutateAdministration() {
     ResponseEntity<Map> page = exchange("/api/v1/products?keyword=H800&page=1&size=1", HttpMethod.GET, tenantToken, null);
     assertThat(page.getStatusCode().value()).isEqualTo(200);
-    assertThat((Map<?, ?>) page.getBody().get("data")).containsEntry("page", 1).containsEntry("size", 1).containsEntry("total", 1);
+    Map<?, ?> data = (Map<?, ?>) page.getBody().get("data");
+    assertThat(data.get("page")).isEqualTo(1);
+    assertThat(data.get("size")).isEqualTo(1);
+    assertThat(data.get("total")).isEqualTo(1);
     assertThat(exchange("/api/v1/products", HttpMethod.POST, viewerToken, product()).getStatusCode().value()).isEqualTo(403);
     assertThat(exchange("/api/v1/users/2/roles", HttpMethod.PUT, viewerToken, Map.of("roleCodes", java.util.List.of("VIEWER"))).getStatusCode().value()).isEqualTo(403);
     assertThat(exchange("/api/v1/wallet/recharges", HttpMethod.POST, viewerToken, Map.of("amountCent", 100)).getStatusCode().value()).isEqualTo(403);
   }
 
   @Test void tenantAdminCanOnlyAssignRolesInsideOwnTenantAndCannotAssignPlatformRole() {
-    assertThat(exchange("/api/v1/users/2/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("VIEWER"))).getStatusCode().value()).isEqualTo(200);
+    assertThat(exchange("/api/v1/users/3/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("VIEWER"))).getStatusCode().value()).isEqualTo(200);
     assertThat(exchange("/api/v1/users/1/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("VIEWER"))).getStatusCode().value()).isEqualTo(403);
-    assertThat(exchange("/api/v1/users/2/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("PLATFORM_ADMIN"))).getStatusCode().value()).isEqualTo(403);
+    assertThat(exchange("/api/v1/users/3/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("PLATFORM_ADMIN"))).getStatusCode().value()).isEqualTo(403);
+    assertThat(exchange("/api/v1/users/2/roles", HttpMethod.PUT, tenantToken, Map.of("roleCodes", java.util.List.of("VIEWER"))).getStatusCode().value()).isEqualTo(409);
+    assertThat(exchange("/api/v1/users/1/enabled?value=false", HttpMethod.PUT, tenantToken, null).getStatusCode().value()).isEqualTo(403);
+    assertThat(exchange("/api/v1/users/2/enabled?value=false", HttpMethod.PUT, tenantToken, null).getStatusCode().value()).isEqualTo(409);
   }
 
   private String login(String username, String password) {
