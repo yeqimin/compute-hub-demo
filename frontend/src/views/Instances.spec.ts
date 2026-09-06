@@ -122,7 +122,11 @@ describe('Instances console', () => {
     await wrapper.find('[data-test=action-confirm]').trigger('click')
     await flushPromises()
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('DELETE'), expect.any(String), expect.any(Object))
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE'),
+      expect.any(String),
+      expect.objectContaining({ confirmButtonClass: 'el-button--danger' }),
+    )
     expect(del).toHaveBeenCalledWith('/instances/7', { params: { scenario: 'SUCCESS' }, headers: { 'Idempotency-Key': 'idem-instance-12' } })
   })
 

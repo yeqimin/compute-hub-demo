@@ -53,7 +53,7 @@ const create = async () => {
 const openAction = (payload: { action: InstanceAction; row: Row }) => { Object.assign(actionForm, { action: payload.action, row: payload.row, instanceIds: [payload.row.id], scenario: 'SUCCESS', batch: false }); actionDialog.value = true }
 const openBatch = (action: InstanceAction) => { if (!selected.value.length) return; Object.assign(actionForm, { action, row: null, instanceIds: selected.value.map(row => row.id), scenario: 'SUCCESS', batch: true }); actionDialog.value = true }
 const submitAction = async () => {
-  if (actionForm.action === 'DELETE') await ElMessageBox.confirm(`即将 DELETE ${actionForm.instanceIds.length} 个实例。此操作会终止计算资源，是否继续？`, '高风险删除确认', { confirmButtonText: '确认 DELETE', cancelButtonText: '取消', type: 'warning' })
+  if (actionForm.action === 'DELETE') await ElMessageBox.confirm(`即将 DELETE ${actionForm.instanceIds.length} 个实例。此操作会终止计算资源，是否继续？`, '高风险删除确认', { confirmButtonText: '确认 DELETE', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger', type: 'warning' })
   actionSubmitting.value = true
   try {
     const config = { headers: { 'Idempotency-Key': idemKey() } }
