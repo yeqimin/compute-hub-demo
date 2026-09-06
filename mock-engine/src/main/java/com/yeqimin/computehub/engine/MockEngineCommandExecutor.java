@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -27,6 +28,7 @@ public class MockEngineCommandExecutor {
   private final boolean ownsScheduler;
   private final Set<String> scheduledCommands = ConcurrentHashMap.newKeySet();
 
+  @Autowired
   public MockEngineCommandExecutor(
       MockEngineCommandRepository repository, MockEngineCallbackClient callbackClient) {
     this(repository, callbackClient, Executors.newScheduledThreadPool(2),

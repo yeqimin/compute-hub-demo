@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a fully operable instance lifecycle with reliable RabbitMQ delivery, gRPC engine execution, auditable recovery, SSE updates, and an interview-ready Vue administration console.
+**Goal:** Build a fully operable instance lifecycle with reliable delivery, gRPC engine execution, auditable recovery, and a production-style Vue administration console.
 
 **Architecture:** Business transactions persist instance, task, audit, realtime, and Outbox records atomically in MySQL. A lease-based publisher sends durable commands to RabbitMQ; a manual-ack consumer invokes the idempotent gRPC Mock Engine, and signed REST callbacks settle the state and creation charge. Vue consumes paginated REST APIs and tenant-scoped SSE events.
 
@@ -1780,7 +1780,7 @@ git add business-server/src/main/java/com/yeqimin/computehub/catalog business-se
 git commit -m "feat: complete administration workflows"
 ```
 
-## Milestone 5: Verification and Interview Delivery
+## Milestone 5: Verification and Project Delivery
 
 ### Task 16: Add end-to-end recovery, SQL evidence, and documentation
 
