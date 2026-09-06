@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "npm run typecheck && vite build && node scripts/check-bundle-cycles.mjs",
+    "build": "npm run typecheck && vite build && node scripts/check-bundle-cycles.mjs && node scripts/check-bundle-styles.mjs",
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json"
   },
