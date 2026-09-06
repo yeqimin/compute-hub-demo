@@ -54,6 +54,7 @@ describe('算力运营大屏', () => {
       observe = vi.fn((element: Element) => { this.element = element })
     })
     ;(globalThis as typeof globalThis & { dashboardObservers: typeof observers }).dashboardObservers = observers
+    chart.setOption.mockClear()
     get.mockReset().mockImplementation((url: string) => url === '/dashboard/summary' ? Promise.resolve(summary) : Promise.resolve([{ clusterCode: 'SH-01', gpuUtilization: 60, cpuUtilization: 40, memoryUtilization: 50 }]))
   })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
@@ -68,6 +69,48 @@ describe('算力运营大屏', () => {
     expect(wrapper.get('[data-test=gpu-total]').text()).toContain('12')
     expect(wrapper.get('[data-test=wallet-available]').text()).toContain('1,234.56')
     expect(wrapper.get('[data-test=task-success-rate]').text()).toContain('87.5%')
+  })
+
+  it('租户共享物理指标被抑制时不生成 GPU 利用率趋势样本', async () => {
+    const tenantSummary = { ...summary, resourceScope: 'TENANT_LOGICAL_USAGE' }
+    get.mockImplementation((url: string) => url === '/dashboard/summary'
+      ? Promise.resolve(tenantSummary)
+      : Promise.resolve([{ clusterCode: 'SH-01', usageScope: 'TENANT_SHARED_METRICS_SUPPRESSED' }]))
+
+    const { wrapper } = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test=metric-trend]').exists()).toBe(false)
+    expect(chart.setOption.mock.calls.some(([option]) => option?.series?.[0]?.type === 'line')).toBe(false)
+  })
+
+  it('平台视图只用有限的物理 GPU 利用率采样', async () => {
+    const platformSummary = { ...summary, resourceScope: 'PLATFORM_PHYSICAL' }
+    get.mockImplementation((url: string) => url === '/dashboard/summary'
+      ? Promise.resolve(platformSummary)
+      : Promise.resolve([
+        { clusterCode: 'SH-01', usageScope: 'PLATFORM_PHYSICAL', gpuUtilization: 60 },
+        { clusterCode: 'SH-02', usageScope: 'PLATFORM_PHYSICAL' },
+        { clusterCode: 'SH-03', usageScope: 'TENANT_SHARED_METRICS_SUPPRESSED', gpuUtilization: 90 },
+      ]))
+
+    const { wrapper } = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test=metric-trend]').exists()).toBe(true)
+    expect(chart.setOption.mock.calls.some(([option]) => option?.series?.[0]?.type === 'line' && option.series[0].data?.[0] === 60)).toBe(true)
+    expect(chart.setOption.mock.calls.some(([option]) => option?.series?.[0]?.type === 'line' && option.series[0].data?.includes(0))).toBe(false)
+  })
+
+  it('租户逻辑 GPU 利用率区域显示共享物理利用率说明', async () => {
+    get.mockImplementation((url: string) => url === '/dashboard/summary'
+      ? Promise.resolve({ ...summary, resourceScope: 'TENANT_LOGICAL_USAGE' })
+      : Promise.resolve([{ clusterCode: 'SH-01', usageScope: 'TENANT_SHARED_METRICS_SUPPRESSED' }]))
+
+    const { wrapper } = await mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-test=metric-trend-empty]').text()).toContain('共享物理利用率未按租户展示')
   })
 
   it('轮询刷新、手动刷新，并在卸载后清理定时器和图表', async () => {

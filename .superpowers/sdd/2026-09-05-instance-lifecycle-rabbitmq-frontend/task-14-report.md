@@ -23,6 +23,29 @@
 - The Spring scheduler logged connection errors while the temporary database was shutting down; assertions and Maven result were unaffected. Disabling schedulers in focused integration-test profiles remains a test-hygiene follow-up.
 - The Java 21 Mockito run emitted its existing dynamic-agent/JDK warning. It does not affect the frontend warning-free build requirement.
 
+## Review fix — suppress tenant physical trend samples (second pass)
+
+- Dashboard trend sampling now accepts only finite `gpuUtilization` values whose `usageScope` is `PLATFORM_PHYSICAL`; suppressed tenant metric rows cannot append a fabricated `0%` point.
+- Tenant logical views replace the physical GPU utilization line with the explicit empty-state explanation `共享物理利用率未按租户展示`. Platform views continue to render and sample the trend normally.
+- Added frontend regression coverage for tenant no-sample behavior, platform finite-sample filtering, and the tenant explanation while preserving polling and existing error behavior.
+
+## Second-pass verification
+
+- Focused RED: the three new Dashboard tests failed on the pre-fix implementation (tenant trend remained mounted, suppressed rows were sampled as zero, and the explanation was absent).
+- GREEN/full frontend suite: 12 test files, 44 tests passed.
+- `npm run typecheck`: passed.
+- `npm run build`: passed with no warning; largest emitted asset was 193.74 kB, below 500 kB.
+
+## Commit
+
+- Author: `yeqimin <383988953@qq.com>`
+- Message: `fix: suppress tenant physical trend samples`
+- SHA: `72829d51bc3badfb2bb63a7d36c3c3fb95b04cbe`.
+
+## Risk
+
+- Tenant users intentionally receive no physical utilization trend; the empty state reflects the API privacy contract. Platform trend values still depend on the metrics endpoint returning finite numeric samples.
+
 ## Controller verification after tenant-isolation fix
 
 - Reran `DashboardMapperIntegrationTest,DashboardServiceTest,DashboardControllerTest` with Java 21 and a real MySQL 8.4 Testcontainer.
