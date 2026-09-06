@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export type InstanceFilterQuery = {
   keyword: string
@@ -17,6 +17,13 @@ const emit = defineEmits<{ 'update:modelValue': [value: InstanceFilterQuery]; se
 const range = ref<string[]>(props.modelValue.startTime && props.modelValue.endTime ? [props.modelValue.startTime, props.modelValue.endTime] : [])
 const update = (patch: Partial<InstanceFilterQuery>) => emit('update:modelValue', { ...props.modelValue, ...patch })
 const setRange = (value: string[] | null) => { range.value = value || []; update({ startTime: range.value[0], endTime: range.value[1] }) }
+watch(
+  () => [props.modelValue.startTime, props.modelValue.endTime],
+  ([startTime, endTime]) => {
+    const next = startTime && endTime ? [startTime, endTime] : []
+    if (next[0] !== range.value[0] || next[1] !== range.value[1]) range.value = next
+  },
+)
 const statusOptions = [['REQUESTED', '已申请'], ['CREATING', '创建中'], ['RUNNING', '运行中'], ['STOPPING', '停止中'], ['STOPPED', '已停止'], ['STARTING', '启动中'], ['RESTARTING', '重启中'], ['DELETING', '删除中'], ['DELETED', '已删除'], ['FAILED', '失败'], ['DELETE_FAILED', '删除失败'], ['UNKNOWN', '待对账']]
 const summary = computed(() => props.modelValue.status || '全部状态')
 </script>

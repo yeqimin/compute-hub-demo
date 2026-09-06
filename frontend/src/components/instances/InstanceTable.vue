@@ -12,7 +12,7 @@ const actions = (row: any) => allowedActions(row.status as InstanceStatus, props
 <template>
   <el-table v-loading="loading" :data="rows" row-key="id" class="instance-table" empty-text="暂无符合条件的实例">
     <el-table-column type="selection" width="48" @selection-change="emit('selection-change', $event)" />
-    <el-table-column label="实例" min-width="180"><template #default="scope"><button class="instance-link" @click="emit('detail', scope.row)">{{ scope.row.name || '-' }}</button><div class="muted">{{ scope.row.instanceNo || `ID ${scope.row.id}` }}</div></template></el-table-column>
+    <el-table-column label="实例" min-width="180"><template #default="scope"><button type="button" class="instance-link" @click="emit('detail', scope.row)">{{ scope.row.name || '-' }}</button><div class="muted">{{ scope.row.instanceNo || `ID ${scope.row.id}` }}</div></template></el-table-column>
     <el-table-column label="算力配置" min-width="170"><template #default="scope"><div>{{ scope.row.productName || '-' }}</div><div class="muted">{{ scope.row.gpuModel || 'GPU' }}{{ scope.row.gpuCount ? ` × ${scope.row.gpuCount}` : '' }} · {{ scope.row.quantity || 1 }} 台</div></template></el-table-column>
     <el-table-column label="目标集群" min-width="125"><template #default="scope">{{ scope.row.clusterName || '-' }}<div v-if="scope.row.region" class="muted">{{ scope.row.region }}</div></template></el-table-column>
     <el-table-column label="计费" min-width="126"><template #default="scope"><span class="money">{{ money(scope.row.amountCent ?? scope.row.creationChargeCent) }}</span><div class="muted">{{ scope.row.billingType || '创建预冻结' }}</div></template></el-table-column>
