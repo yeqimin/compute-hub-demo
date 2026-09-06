@@ -2,17 +2,26 @@ package com.yeqimin.computehub.dashboard;
 
 import com.yeqimin.computehub.common.ApiResponse;
 import com.yeqimin.computehub.engine.EngineClient;
-import com.yeqimin.computehub.persistence.DashboardMapper;
-import com.yeqimin.computehub.security.*;
-import java.time.Instant;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
 @RestController @RequestMapping("/api/v1")
 public class DashboardController {
-  private final DashboardMapper mapper;private final EngineClient engine;
-  public DashboardController(DashboardMapper mapper,EngineClient engine){this.mapper=mapper;this.engine=engine;}
-  @GetMapping("/dashboard/summary") public ApiResponse<?> summary(){UserPrincipal u=CurrentUser.get();return ApiResponse.ok(mapper.summary(u.platformAdmin()?null:u.tenantId()));}
-  @GetMapping("/metrics/clusters") public ApiResponse<?> metrics(){try{var reply=engine.metrics();var list=reply.getMetricsList().stream().map(m->Map.<String,Object>of("clusterCode",m.getClusterCode(),"gpuUtilization",round(m.getGpuUtilization()),"cpuUtilization",round(m.getCpuUtilization()),"memoryUtilization",round(m.getMemoryUtilization()),"timestamp",m.getTimestamp())).toList();return ApiResponse.ok(list);}catch(Exception e){long now=Instant.now().getEpochSecond();return ApiResponse.ok(List.of(Map.of("clusterCode","SH-GPU-01","gpuUtilization",62.0,"cpuUtilization",45.0,"memoryUtilization",58.0,"timestamp",now),Map.of("clusterCode","BJ-GPU-01","gpuUtilization",74.0,"cpuUtilization",53.0,"memoryUtilization",67.0,"timestamp",now)));}}
+  private final DashboardService dashboard;private final EngineClient engine;
+  public DashboardController(DashboardService dashboard,EngineClient engine){this.dashboard=dashboard;this.engine=engine;}
+  @GetMapping("/dashboard/summary") public ApiResponse<?> summary(){return ApiResponse.ok(dashboard.summary());}
+  @GetMapping("/metrics/clusters") public ApiResponse<?> metrics(){
+    try {
+      DashboardService.MetricsScope scope = dashboard.metricsScope();
+      var list = engine.metrics().getMetricsList().stream()
+          .filter(metric -> scope.platformPhysical() || scope.clusterCodes().contains(metric.getClusterCode()))
+          .map(metric -> metric(scope, metric)).toList();
+      return ApiResponse.ok(list);
+    } catch(Exception e) { return ApiResponse.ok(List.of()); }
+  }
+  private static Map<String,Object> metric(DashboardService.MetricsScope scope, com.yeqimin.computehub.proto.ClusterMetric metric) {
+    if (!scope.platformPhysical()) return Map.of("clusterCode", metric.getClusterCode(), "usageScope", "TENANT_SHARED_METRICS_SUPPRESSED");
+    return Map.of("clusterCode", metric.getClusterCode(), "gpuUtilization", round(metric.getGpuUtilization()), "cpuUtilization", round(metric.getCpuUtilization()), "memoryUtilization", round(metric.getMemoryUtilization()), "timestamp", metric.getTimestamp(), "usageScope", "PLATFORM_PHYSICAL");
+  }
   private static double round(double v){return Math.round(v*10.0)/10.0;}
 }

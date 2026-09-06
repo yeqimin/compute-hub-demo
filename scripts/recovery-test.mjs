@@ -1,60 +1,32 @@
 import { execFileSync } from 'node:child_process'
+import {
+  createInstance,
+  getInstance,
+  login,
+  waitForHealth,
+  waitForInstance,
+} from './lib/demo-client.mjs'
 
-const base = process.env.BASE_URL ?? 'http://localhost:8080/api/v1'
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 
-const loginResponse = await fetch(`${base}/auth/login`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ username: 'tenant_admin', password: 'Tenant@123' }),
-})
-const login = await loginResponse.json()
-if (!loginResponse.ok || !login.data?.token) throw new Error('login failed')
-const headers = { authorization: `Bearer ${login.data.token}` }
-
+await waitForHealth()
+const token = await login('tenant_admin', 'Tenant@123')
 const suffix = Date.now()
-const createResponse = await fetch(`${base}/instances`, {
-  method: 'POST',
-  headers: {
-    ...headers,
-    'content-type': 'application/json',
-    'idempotency-key': `recovery-${suffix}`,
-  },
-  body: JSON.stringify({
-    productId: 1,
-    clusterId: 1,
-    name: `engine-recovery-${suffix}`,
-    quantity: 1,
-    scenario: 'SUCCESS',
-  }),
-})
-const created = await createResponse.json()
-if (!createResponse.ok) throw new Error(`create failed: ${JSON.stringify(created)}`)
+const created = await createInstance(token, 'SUCCESS', `recovery-${suffix}`)
 
-const getInstance = async () => {
-  const response = await fetch(`${base}/instances/${created.data.id}`, { headers })
-  const payload = await response.json()
-  if (!response.ok) throw new Error(`query failed: ${JSON.stringify(payload)}`)
-  return payload.data
-}
-
-const acceptedDeadline = Date.now() + 5000
+const acceptedDeadline = Date.now() + 5_000
+let accepted = false
 while (Date.now() < acceptedDeadline) {
-  const current = await getInstance()
-  if (current.status === 'DISPATCHING') break
+  const current = await getInstance(token, created.id)
+  if (current.status === 'CREATING') {
+    accepted = true
+    break
+  }
   await sleep(50)
 }
-if ((await getInstance()).status !== 'DISPATCHING') throw new Error('engine did not accept command before restart')
+if (!accepted) throw new Error(`engine did not accept command before restart; status=${(await getInstance(token, created.id)).status}`)
 
 execFileSync('docker', ['compose', 'restart', 'mock-engine'], { stdio: 'inherit' })
+await waitForInstance(token, created.id, 'RUNNING', 30_000)
 
-const recoveryDeadline = Date.now() + 20000
-while (Date.now() < recoveryDeadline) {
-  const current = await getInstance()
-  if (current.status === 'RUNNING') {
-    console.log('Recovery passed: persisted engine command resumed after Mock Engine restart')
-    process.exit(0)
-  }
-  await sleep(250)
-}
-throw new Error(`engine command did not recover, final status=${(await getInstance()).status}`)
+console.log('Recovery passed: persisted engine command resumed after Mock Engine restart')
