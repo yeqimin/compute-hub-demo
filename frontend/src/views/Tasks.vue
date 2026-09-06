@@ -38,7 +38,7 @@ const updateTimeRange = (range: string[] | null) => { filters.startTime = range?
 const poll = () => { if (!interacting.value && !filtersDirty.value) void load() }
 watch(filters, () => { if (!ownRouteUpdate) filtersDirty.value = true }, { deep: true })
 watch(() => route.query, async () => { if (ownRouteUpdate) return; Object.assign(filters, readRoute()); page.value = Number(route.query.page) || 1; size.value = Number(route.query.size) || 20; filtersDirty.value = false; await load() })
-onMounted(async () => { if (auth.isAdmin) { try { tenants.value = await api.get<TenantOption[]>('/tenants') } catch { tenants.value = [] } } await load(); timer = window.setInterval(poll, 5000) })
+onMounted(async () => { if (auth.isAdmin) { try { const page:any = await api.get('/tenants', { params: { page: 1, size: 100 } }); tenants.value = page.items || page } catch { tenants.value = [] } } await load(); timer = window.setInterval(poll, 5000) })
 onBeforeUnmount(() => { if (timer !== undefined) window.clearInterval(timer) })
 </script>
 <template>
