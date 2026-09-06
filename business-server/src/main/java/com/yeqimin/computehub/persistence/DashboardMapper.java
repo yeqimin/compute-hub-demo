@@ -9,13 +9,13 @@ public interface DashboardMapper {
   @Select("""
       SELECT
         CASE WHEN #{tenantId} IS NULL THEN (SELECT COUNT(*) FROM compute_cluster)
-          ELSE (SELECT COUNT(DISTINCT i.cluster_id) FROM compute_instance i WHERE i.tenant_id=#{tenantId} AND i.status&lt;&gt;'DELETED') END clusterCount,
+          ELSE (SELECT COUNT(DISTINCT i.cluster_id) FROM compute_instance i WHERE i.tenant_id=#{tenantId} AND i.status<>'DELETED') END clusterCount,
         CASE WHEN #{tenantId} IS NULL THEN (SELECT COUNT(*) FROM compute_node n WHERE n.status='READY')
-          ELSE (SELECT COUNT(*) FROM compute_node n WHERE n.status='READY' AND EXISTS (SELECT 1 FROM compute_instance i WHERE i.cluster_id=n.cluster_id AND i.tenant_id=#{tenantId} AND i.status&lt;&gt;'DELETED')) END readyNodeCount,
-        CASE WHEN #{tenantId} IS NULL THEN (SELECT COUNT(*) FROM compute_node n WHERE n.status&lt;&gt;'READY')
-          ELSE (SELECT COUNT(*) FROM compute_node n WHERE n.status&lt;&gt;'READY' AND EXISTS (SELECT 1 FROM compute_instance i WHERE i.cluster_id=n.cluster_id AND i.tenant_id=#{tenantId} AND i.status&lt;&gt;'DELETED')) END unhealthyNodeCount,
+          ELSE (SELECT COUNT(*) FROM compute_node n WHERE n.status='READY' AND EXISTS (SELECT 1 FROM compute_instance i WHERE i.cluster_id=n.cluster_id AND i.tenant_id=#{tenantId} AND i.status<>'DELETED')) END readyNodeCount,
+        CASE WHEN #{tenantId} IS NULL THEN (SELECT COUNT(*) FROM compute_node n WHERE n.status<>'READY')
+          ELSE (SELECT COUNT(*) FROM compute_node n WHERE n.status<>'READY' AND EXISTS (SELECT 1 FROM compute_instance i WHERE i.cluster_id=n.cluster_id AND i.tenant_id=#{tenantId} AND i.status<>'DELETED')) END unhealthyNodeCount,
         CASE WHEN #{tenantId} IS NULL THEN (SELECT COALESCE(SUM(n.gpu_total),0) FROM compute_node n)
-          ELSE (SELECT COALESCE(SUM(p.gpu_count),0) FROM compute_instance i JOIN compute_product p ON p.id=i.product_id WHERE i.tenant_id=#{tenantId} AND i.status&lt;&gt;'DELETED') END gpuTotal,
+          ELSE (SELECT COALESCE(SUM(p.gpu_count),0) FROM compute_instance i JOIN compute_product p ON p.id=i.product_id WHERE i.tenant_id=#{tenantId} AND i.status<>'DELETED') END gpuTotal,
         CASE WHEN #{tenantId} IS NULL THEN (SELECT COALESCE(SUM(n.gpu_allocated),0) FROM compute_node n)
           ELSE (SELECT COALESCE(SUM(p.gpu_count),0) FROM compute_instance i JOIN compute_product p ON p.id=i.product_id WHERE i.tenant_id=#{tenantId} AND i.status='RUNNING') END gpuAllocated,
         (SELECT COUNT(*) FROM compute_instance i WHERE (#{tenantId} IS NULL OR i.tenant_id=#{tenantId}) AND i.status='RUNNING') runningInstances,
@@ -38,7 +38,7 @@ public interface DashboardMapper {
   @Select("""
       SELECT i.status status,COUNT(*) value
       FROM compute_instance i
-      WHERE (#{tenantId} IS NULL OR i.tenant_id=#{tenantId}) AND i.status&lt;&gt;'DELETED'
+      WHERE (#{tenantId} IS NULL OR i.tenant_id=#{tenantId}) AND i.status<>'DELETED'
       GROUP BY i.status ORDER BY i.status
       """)
   List<Map<String,Object>> instanceDistribution(@Param("tenantId") Long tenantId);
@@ -49,7 +49,7 @@ public interface DashboardMapper {
       FROM compute_cluster c JOIN compute_node n ON n.cluster_id=c.id
       WHERE #{tenantId} IS NULL OR EXISTS (
         SELECT 1 FROM compute_instance i
-        WHERE i.cluster_id=c.id AND i.tenant_id=#{tenantId} AND i.status&lt;&gt;'DELETED')
+        WHERE i.cluster_id=c.id AND i.tenant_id=#{tenantId} AND i.status<>'DELETED')
       ORDER BY c.id,n.id
       """)
   List<Map<String,Object>> topology(@Param("tenantId") Long tenantId);

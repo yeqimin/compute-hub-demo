@@ -18,5 +18,7 @@
 
 ## Risk / follow-up
 
-- `DashboardMapperIntegrationTest` provides a MySQL/Testcontainers tenant-isolation regression test, but it could not be executed in this run because mounting the host Docker Desktop socket into the build container was rejected by the execution safety policy. Run it in the established socket-enabled CI/Docker test environment before release.
+- The first controller-run MySQL/Testcontainers check failed because Java annotation SQL contained literal `&lt;&gt;`, which MyBatis sent unchanged to MySQL. The mapper was corrected to use native SQL `<>` in every Dashboard query.
+- The corrected `DashboardMapperIntegrationTest,DashboardServiceTest` run used Java 21 and real MySQL 8.4: 3 tests, 0 failures, 0 errors, 0 skipped; `BUILD SUCCESS`.
+- The Spring scheduler logged connection errors while the temporary database was shutting down; assertions and Maven result were unaffected. Disabling schedulers in focused integration-test profiles remains a test-hygiene follow-up.
 - The Java 21 Mockito run emitted its existing dynamic-agent/JDK warning. It does not affect the frontend warning-free build requirement.
