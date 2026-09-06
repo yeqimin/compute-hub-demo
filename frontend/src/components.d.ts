@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ClusterTopology: typeof import('./components/dashboard/ClusterTopology.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCol: typeof import('element-plus/es')['ElCol']
@@ -50,6 +51,8 @@ declare module 'vue' {
     InstanceDetailDrawer: typeof import('./components/instances/InstanceDetailDrawer.vue')['default']
     InstanceFilters: typeof import('./components/instances/InstanceFilters.vue')['default']
     InstanceTable: typeof import('./components/instances/InstanceTable.vue')['default']
+    MetricCard: typeof import('./components/dashboard/MetricCard.vue')['default']
+    MetricTrend: typeof import('./components/dashboard/MetricTrend.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TaskDetailDrawer: typeof import('./components/tasks/TaskDetailDrawer.vue')['default']

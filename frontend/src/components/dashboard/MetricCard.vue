@@ -1,0 +1,5 @@
+<script setup lang="ts">
+withDefaults(defineProps<{ label: string; value: string | number; hint?: string; tone?: 'danger' | 'success' | 'accent' }>(), { hint: '', tone: 'accent' })
+</script>
+<template><button class="metric-card panel" :class="`metric-card--${tone}`" type="button" v-bind="$attrs"><span class="metric-card__label">{{ label }}</span><strong class="metric-card__value">{{ value }}</strong><span class="metric-card__hint">{{ hint }}</span></button></template>
+<style scoped>.metric-card{width:100%;border:1px solid var(--border);text-align:left;cursor:pointer;background:var(--surface);font:inherit;min-height:122px}.metric-card:hover{transform:translateY(-2px);box-shadow:0 12px 34px #16375814}.metric-card__label,.metric-card__hint{display:block;color:var(--muted);font-size:12px}.metric-card__value{display:block;font-size:29px;margin:11px 0 6px;font-variant-numeric:tabular-nums}.metric-card--accent .metric-card__value{color:#168e9b}.metric-card--danger .metric-card__value{color:#dc4c64}.metric-card--success .metric-card__value{color:#1d9b70}</style>
