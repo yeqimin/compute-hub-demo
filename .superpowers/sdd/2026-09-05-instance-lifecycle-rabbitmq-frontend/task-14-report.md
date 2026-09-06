@@ -40,7 +40,7 @@
 
 - Author: `yeqimin <383988953@qq.com>`
 - Message: `fix: suppress tenant physical trend samples`
-- SHA: `72829d51bc3badfb2bb63a7d36c3c3fb95b04cbe`.
+- SHA: `84180cac757c70333ef008645304eae01cb3e069` (implementation commit).
 
 ## Risk
 
