@@ -60,6 +60,8 @@ export interface AsyncTask {
   outboxLastError?: string
   outboxCreatedAt?: string
   outboxPublishedAt?: string
+  nextRetryAt?: string
+  outboxNextRetryAt?: string
   acceptedAt?: string
   finishedAt?: string
   deadlineAt?: string

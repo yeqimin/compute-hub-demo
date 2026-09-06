@@ -26,6 +26,7 @@ const detail = {
   ...unknownTask, messageId: 'message-042', engineEventId: 'event-042', outboxEventId: 'outbox-042',
   outboxState: 'WAITING_CALLBACK', outboxRetryCount: 3, outboxCreatedAt: '2026-09-06T10:00:01',
   acceptedAt: '2026-09-06T10:00:02', finishedAt: null, updatedAt: '2026-09-06T10:00:03',
+  nextRetryAt: '2026-09-06T10:05:00', outboxNextRetryAt: '2026-09-06T10:04:00', deadlineAt: '2026-09-06T10:10:00',
 }
 
 const elementStubs = {
@@ -33,7 +34,10 @@ const elementStubs = {
   'el-select': { props: ['modelValue'], emits: ['update:modelValue'], template: '<select v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>' },
   'el-option': { props: ['label', 'value'], template: '<option :value="value">{{ label }}</option>' },
   'el-input': { props: ['modelValue'], emits: ['update:modelValue'], template: '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />' },
-  'el-date-picker': true,
+  'el-date-picker': {
+    props: ['modelValue'], emits: ['change'],
+    template: '<div data-test="date-picker"><span data-test="date-picker-value">{{ JSON.stringify(modelValue || []) }}</span><button data-test="pick-date-range" @click="$emit(\'change\', [\'2026-09-04T08:00:00\', \'2026-09-04T18:00:00\'])">选择时间</button></div>',
+  },
   'el-pagination': true,
   'el-alert': { template: '<div><slot /></div>' },
   'el-tag': { template: '<span><slot /></span>' },
@@ -46,10 +50,10 @@ const elementStubs = {
   'el-skeleton': { template: '<div><slot /></div>' },
 }
 
-const mountView = async (role = 'TENANT_ADMIN', permissions = ['instance:retry']) => {
+const mountView = async (role = 'TENANT_ADMIN', permissions = ['instance:retry'], initialPath = '/tasks') => {
   localStorage.setItem('compute-user', JSON.stringify({ id: 1, tenantId: role === 'PLATFORM_ADMIN' ? null : 2, roles: [role], permissions }))
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/tasks', component: Tasks }, { path: '/instances', component: { template: '<div />' } }] })
-  await router.push('/tasks')
+  await router.push(initialPath)
   await router.isReady()
   const wrapper = mount(Tasks, { global: { plugins: [createPinia(), router], stubs: elementStubs } })
   await flushPromises()
@@ -82,6 +86,41 @@ describe('异步任务中心', () => {
     expect(get).toHaveBeenLastCalledWith('/tasks', { params: expect.objectContaining({ state: 'UNKNOWN', page: 1, size: 20, sort: 'createdAt', order: 'desc' }) })
   })
 
+  it('将 FAILED、DEAD 和 UNKNOWN 都统计为本页异常/待对账', async () => {
+    get.mockImplementation((url: string) => url === '/tasks' ? Promise.resolve({
+      items: [
+        { ...unknownTask, id: 1, state: 'FAILED' },
+        { ...unknownTask, id: 2, state: 'DEAD' },
+        { ...unknownTask, id: 3, state: 'UNKNOWN' },
+      ], total: 3, page: 1, size: 20,
+    }) : Promise.resolve({}))
+    const { wrapper } = await mountView()
+
+    expect(wrapper.get('[data-test=summary-abnormal]').text()).toBe('3')
+  })
+
+  it('双向同步日期筛选：URL 回填、浏览器导航、选择与重置都反映到日期控件和请求', async () => {
+    const { wrapper, router } = await mountView('TENANT_ADMIN', ['instance:retry'], '/tasks?startTime=2026-09-01T00:00:00&endTime=2026-09-02T23:59:59')
+    expect(wrapper.get('[data-test=date-picker-value]').text()).toContain('2026-09-01T00:00:00')
+    expect(get).toHaveBeenLastCalledWith('/tasks', { params: expect.objectContaining({ startedAt: '2026-09-01T00:00:00', endedAt: '2026-09-02T23:59:59' }) })
+
+    await router.push('/tasks?startTime=2026-09-03T00:00:00&endTime=2026-09-03T23:59:59')
+    await flushPromises()
+    expect(wrapper.get('[data-test=date-picker-value]').text()).toContain('2026-09-03T00:00:00')
+
+    await wrapper.get('[data-test=pick-date-range]').trigger('click')
+    await wrapper.get('[data-test=search]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ startTime: '2026-09-04T08:00:00', endTime: '2026-09-04T18:00:00' })
+    expect(get).toHaveBeenLastCalledWith('/tasks', { params: expect.objectContaining({ startedAt: '2026-09-04T08:00:00', endedAt: '2026-09-04T18:00:00' }) })
+
+    await wrapper.findAll('button').find(button => button.text() === '重置')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test=date-picker-value]').text()).toBe('[]')
+    expect(router.currentRoute.value.query.startTime).toBeUndefined()
+    expect(router.currentRoute.value.query.endTime).toBeUndefined()
+  })
+
   it('详情抽屉显示五阶段处理时间线和任务关联字段', async () => {
     const { wrapper } = await mountView()
     await wrapper.get('[data-test=task-detail-42]').trigger('click')
@@ -91,6 +130,19 @@ describe('异步任务中心', () => {
     expect(wrapper.findAll('[data-test=task-phase]')).toHaveLength(5)
     expect(wrapper.text()).toContain('消息号')
     expect(wrapper.text()).toContain('outbox-042')
+  })
+
+  it('以中文本地化格式展示列表时间，并明确显示自动重试与回调截止时间', async () => {
+    const { wrapper } = await mountView()
+    expect(wrapper.get('[data-test=task-list-created-at]').text()).not.toContain('T')
+    expect(wrapper.get('[data-test=task-list-updated-at]').text()).toBe('-')
+
+    await wrapper.get('[data-test=task-detail-42]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('下次自动重试')
+    expect(wrapper.text()).toContain('Outbox 下次重试')
+    expect(wrapper.text()).toContain('回调截止时间')
+    expect(wrapper.text()).not.toContain('2026-09-06T10:05:00')
   })
 
   it('仅允许具有 instance:retry 权限的 UNKNOWN 任务显示处置动作', async () => {

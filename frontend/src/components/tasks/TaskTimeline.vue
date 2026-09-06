@@ -2,9 +2,10 @@
 import { computed } from 'vue'
 import type { AsyncTask } from '../../types/api'
 import type { TagType } from '../../utils/status'
+import { formatDateTime } from '../../utils/time'
 
 const props = defineProps<{ task: AsyncTask }>()
-const displayTime = (value?: string | null) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未到达'
+const displayTime = (value?: string | null) => formatDateTime(value, '尚未到达')
 type Phase = { key: string; label: string; detail: string; state: string; time?: string | null; type: TagType }
 const phases = computed<Phase[]>(() => [
   { key: 'transaction', label: '事务', detail: '业务任务已落库', state: 'COMPLETED', time: props.task.createdAt, type: 'primary' },
