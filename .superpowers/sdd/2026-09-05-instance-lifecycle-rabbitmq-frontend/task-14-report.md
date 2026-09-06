@@ -22,3 +22,17 @@
 - The corrected `DashboardMapperIntegrationTest,DashboardServiceTest` run used Java 21 and real MySQL 8.4: 3 tests, 0 failures, 0 errors, 0 skipped; `BUILD SUCCESS`.
 - The Spring scheduler logged connection errors while the temporary database was shutting down; assertions and Maven result were unaffected. Disabling schedulers in focused integration-test profiles remains a test-hygiene follow-up.
 - The Java 21 Mockito run emitted its existing dynamic-agent/JDK warning. It does not affect the frontend warning-free build requirement.
+
+## Review fix — tenant metric isolation
+
+- Platform administrators retain engine-wide physical GPU/CPU/memory utilization. Tenant requests now return only clusters used by that tenant and label them `TENANT_SHARED_METRICS_SUPPRESSED`; shared physical utilization fields are omitted rather than presented as tenant values.
+- Dashboard summaries identify their semantics with `resourceScope`: platform values are `PLATFORM_PHYSICAL`; tenant GPU figures are `TENANT_LOGICAL_USAGE` derived from that tenant's product requests and running instances. The UI labels this distinction and does not call tenant values physical capacity.
+- Tenant topology rows return `gpuAllocated: null`; the UI explicitly says that shared-node allocated capacity is not shown. Platform topology preserves the actual node allocation.
+- Added `DashboardControllerTest` (tenant cluster filtering/suppressed fields and platform physical fields), strengthened service and real-MySQL mapper assertions, and disabled scheduling in the mapper integration-test context to avoid shutdown noise.
+- `HEALTHY` and compatible `READY` statuses now render as green “健康”; other topology statuses render Chinese labels. GPU capacity now observes container resize and disconnects/disposes on unmount. Abnormal task and instance cards no longer imply that `UNKNOWN` alone represents the aggregate.
+
+## Review-fix verification
+
+- RED: focused frontend test failed before the fix because the capacity chart lacked its own resize observer and topology displayed `HEALTHY`/a zero-like shared allocation; the pre-fix controller also returned all physical engine metrics to a tenant.
+- GREEN: focused frontend dashboard suite: 4 tests passed; full frontend suite: 41 tests in 12 files passed; typecheck and production build passed.
+- Java 21 Docker focused run compiled the dashboard tests and passed 4 service/controller tests with 0 failures/errors/skips. The real-MySQL mapper test was safely skipped because Testcontainers inside the Maven container cannot access the host Docker socket; mounting that socket was rejected as an unsafe privilege escalation. It must be rerun by the controller host that has direct Docker/Testcontainers access.

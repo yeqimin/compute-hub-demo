@@ -3,6 +3,7 @@ package com.yeqimin.computehub.dashboard;
 import com.yeqimin.computehub.persistence.DashboardMapper;
 import com.yeqimin.computehub.security.UserPrincipal;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
@@ -30,15 +31,19 @@ class DashboardServiceTest {
     when(mapper.summary(2L)).thenReturn(Map.of("gpuTotal", 8L, "gpuAllocated", 3L));
     when(mapper.taskSummary(2L)).thenReturn(Map.of("successfulTasks", 3L, "abnormalTasks", 1L, "totalTasks", 4L));
     when(mapper.instanceDistribution(2L)).thenReturn(List.of(Map.of("status", "RUNNING", "value", 3L)));
-    when(mapper.topology(2L)).thenReturn(List.of(Map.of("clusterId", 7L, "clusterCode", "SH-01", "clusterName", "上海", "clusterStatus", "READY", "nodeId", 8L, "nodeName", "node-a", "nodeStatus", "READY", "gpuTotal", 8L, "gpuAllocated", 3L)));
+    Map<String, Object> tenantNode = new HashMap<>(Map.of("clusterId", 7L, "clusterCode", "SH-01", "clusterName", "上海", "clusterStatus", "READY", "nodeId", 8L, "nodeName", "node-a", "nodeStatus", "READY", "gpuTotal", 8L));
+    tenantNode.put("gpuAllocated", null);
+    when(mapper.topology(2L)).thenReturn(List.of(tenantNode));
 
     Map<String, Object> result = service.summary();
 
     assertThat(result).containsEntry("gpuAvailable", 5L)
+        .containsEntry("resourceScope", "TENANT_LOGICAL_USAGE")
         .containsEntry("taskSuccessRate", 75.0d)
         .containsEntry("abnormalTasks", 1L)
         .containsEntry("instanceDistribution", List.of(Map.of("status", "RUNNING", "value", 3L)));
-    assertThat((List<?>) result.get("topology")).hasSize(1);
+    assertThat((List<Map<String, Object>>) result.get("topology")).singleElement()
+        .extracting(node -> ((List<Map<String, Object>>) node.get("nodes")).get(0).get("gpuAllocated")).isNull();
     verify(mapper).summary(2L);
     verify(mapper).taskSummary(2L);
     verify(mapper).instanceDistribution(2L);
@@ -56,6 +61,7 @@ class DashboardServiceTest {
     Map<String, Object> result = service.summary();
 
     assertThat(result).containsEntry("gpuAvailable", 6L).containsEntry("taskSuccessRate", 0.0d);
+    assertThat(result).containsEntry("resourceScope", "PLATFORM_PHYSICAL");
     verify(mapper).summary(null);
     verify(mapper).taskSummary(null);
     verify(mapper).instanceDistribution(null);

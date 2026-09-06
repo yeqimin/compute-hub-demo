@@ -16,7 +16,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest
+@SpringBootTest(properties = "compute-hub.scheduling.enabled=false")
 class DashboardMapperIntegrationTest {
   @Container static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8").withDatabaseName("dashboard");
   @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) { registry.add("spring.datasource.url", MYSQL::getJdbcUrl); registry.add("spring.datasource.username", MYSQL::getUsername); registry.add("spring.datasource.password", MYSQL::getPassword); }
@@ -41,6 +41,9 @@ class DashboardMapperIntegrationTest {
     assertThat(number(tasks, "successfulTasks")).isEqualTo(1L);
     assertThat(number(tasks, "abnormalTasks")).isZero();
     assertThat(topology).extracting(row -> row.get("clusterCode")).containsOnly("SH-GPU-01");
+    assertThat(topology).extracting(row -> row.get("gpuAllocated")).containsOnlyNulls();
+    assertThat(mapper.topology(null)).filteredOn(row -> "SH-GPU-01".equals(row.get("clusterCode")))
+        .extracting(row -> row.get("gpuAllocated")).doesNotContainNull();
   }
 
   private long instance(long tenantId, long productId, long clusterId, String status) {

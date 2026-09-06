@@ -30,7 +30,7 @@ const summary = {
   runningInstances: 4, abnormalInstances: 2, taskSuccessRate: 87.5, abnormalTasks: 1,
   availableCent: 123456, frozenCent: 5000,
   instanceDistribution: [{ status: 'RUNNING', value: 4 }, { status: 'UNKNOWN', value: 2 }],
-  topology: [{ id: 1, code: 'SH-01', name: '上海集群', status: 'READY', nodes: [{ id: 2, name: 'node-a', status: 'READY', gpuTotal: 8, gpuAllocated: 3 }] }],
+  topology: [{ id: 1, code: 'SH-01', name: '上海集群', status: 'HEALTHY', nodes: [{ id: 2, name: 'node-a', status: 'READY', gpuTotal: 8, gpuAllocated: null }] }],
 }
 
 const mountView = async () => {
@@ -45,9 +45,18 @@ const mountView = async () => {
 
 describe('算力运营大屏', () => {
   beforeEach(() => {
+    const observers: { callback: ResizeObserverCallback, disconnect: ReturnType<typeof vi.fn>, element?: Element }[] = []
+    vi.stubGlobal('ResizeObserver', class {
+      callback: ResizeObserverCallback
+      disconnect = vi.fn()
+      element?: Element
+      constructor(callback: ResizeObserverCallback) { this.callback = callback; observers.push(this) }
+      observe = vi.fn((element: Element) => { this.element = element })
+    })
+    ;(globalThis as typeof globalThis & { dashboardObservers: typeof observers }).dashboardObservers = observers
     get.mockReset().mockImplementation((url: string) => url === '/dashboard/summary' ? Promise.resolve(summary) : Promise.resolve([{ clusterCode: 'SH-01', gpuUtilization: 60, cpuUtilization: 40, memoryUtilization: 50 }]))
   })
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
   it('在加载期间显示骨架，并映射租户范围内的 KPI 和金额', async () => {
     let resolveSummary!: (value: typeof summary) => void
@@ -76,7 +85,19 @@ describe('算力运营大屏', () => {
     expect(chart.dispose).toHaveBeenCalled()
   })
 
-  it('点击实例和异常任务 KPI 时带状态筛选跳转', async () => {
+  it('容量图响应容器尺寸变化并在卸载时释放观察器', async () => {
+    const { wrapper } = await mountView()
+    await flushPromises()
+    const observers = (globalThis as typeof globalThis & { dashboardObservers: { callback: ResizeObserverCallback, disconnect: ReturnType<typeof vi.fn>, element?: Element }[] }).dashboardObservers
+    const capacityObserver = observers.find(observer => observer.element === wrapper.get('[data-test=capacity-chart]').element)
+    expect(capacityObserver).toBeDefined()
+    capacityObserver!.callback([], {} as ResizeObserver)
+    expect(chart.resize).toHaveBeenCalled()
+    wrapper.unmount()
+    expect(capacityObserver!.disconnect).toHaveBeenCalled()
+  })
+
+  it('点击实例和异常任务 KPI 时只使用可表达的筛选跳转', async () => {
     const { wrapper, router } = await mountView()
     await flushPromises()
     await wrapper.get('[data-test=running-instances]').trigger('click')
@@ -85,6 +106,8 @@ describe('算力运营大屏', () => {
     await router.push('/dashboard')
     await wrapper.get('[data-test=abnormal-tasks]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value).toMatchObject({ path: '/tasks', query: { state: 'UNKNOWN' } })
+    expect(router.currentRoute.value).toMatchObject({ path: '/tasks', query: {} })
+    expect(wrapper.text()).toContain('健康')
+    expect(wrapper.text()).toContain('租户范围内不展示共享节点已分配量')
   })
 })

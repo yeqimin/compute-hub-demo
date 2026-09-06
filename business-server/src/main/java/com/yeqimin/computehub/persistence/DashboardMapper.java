@@ -45,7 +45,8 @@ public interface DashboardMapper {
 
   @Select("""
       SELECT c.id clusterId,c.code clusterCode,c.name clusterName,c.region clusterRegion,c.status clusterStatus,
-        n.id nodeId,n.name nodeName,n.status nodeStatus,n.gpu_model gpuModel,n.gpu_total gpuTotal,n.gpu_allocated gpuAllocated
+        n.id nodeId,n.name nodeName,n.status nodeStatus,n.gpu_model gpuModel,n.gpu_total gpuTotal,
+        CASE WHEN #{tenantId} IS NULL THEN n.gpu_allocated ELSE NULL END gpuAllocated
       FROM compute_cluster c JOIN compute_node n ON n.cluster_id=c.id
       WHERE #{tenantId} IS NULL OR EXISTS (
         SELECT 1 FROM compute_instance i
