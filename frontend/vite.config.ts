@@ -12,11 +12,12 @@ export default defineConfig({
   ],
   server: { port: 5173, proxy: { '/api': 'http://localhost:8080' } },
   build: {
+    chunkSizeWarningLimit: 600,
     rolldownOptions: {
       output: {
         codeSplitting: {
           groups: [
-            { name: 'echarts', test: /node_modules[\\/]echarts[\\/]/, maxSize: 400 * 1024 },
+            { name: 'echarts', test: /node_modules[\\/]echarts[\\/]/ },
           ],
         },
       },
